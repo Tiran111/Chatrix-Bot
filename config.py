@@ -1,8 +1,8 @@
 import os
 
-# ТОКЕН БЕЗПОСЕРЕДНЬО В КОДІ - щоб бот запрацював
-TOKEN = "7823150178:AAElnZEQB9nSwJxAZ_J75Mg-1UVaVWQcr-s"
-ADMIN_ID = 1385645772
+# Тепер токен буде з railway.toml
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+ADMIN_ID = int(os.getenv('ADMIN_ID'))
 
 GOALS = {
     '💞 Серйозні стосунки': 'Серйозні стосунки',

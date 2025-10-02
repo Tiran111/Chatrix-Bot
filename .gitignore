@@ -9,6 +9,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+railway.toml
 
 # Database
 *.db
