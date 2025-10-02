@@ -1,9 +1,4 @@
-# Перекодуємо файл в UTF-8
-iconv -f windows-1251 -t utf-8 utils/states.py > utils/states_new.py
-mv utils/states_new.py utils/states.py
-
-# Або просто перестворюємо файл
-echo "from enum import Enum, auto
+from enum import Enum, auto
 
 class States(Enum):
     START = auto()
@@ -15,7 +10,7 @@ class States(Enum):
     PROFILE_BIO = auto()
     ADD_MAIN_PHOTO = auto()
     
-    # Адмін стани
+    # Admin states
     ADMIN_SEARCH_USER = auto()
     ADMIN_BAN_USER = auto()
     ADMIN_UNBAN_USER = auto()
@@ -24,5 +19,8 @@ class States(Enum):
     ADMIN_SEND_MESSAGE = auto()
     BROADCAST = auto()
 
+# User states storage
 user_states = {}
-user_profiles = {}" > utils/states.py
+
+# User profiles during creation
+user_profiles = {}
