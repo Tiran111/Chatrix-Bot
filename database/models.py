@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime, timedelta
 
 # Шлях до бази даних
 DATABASE_PATH = 'dating_bot.db'
@@ -11,6 +12,7 @@ class Database:
         self.cursor = self.conn.cursor()
         self.init_db()
         self.init_rating_system()
+        self.init_like_limits()
     
     def init_db(self):
         """Ініціалізація бази даних"""
@@ -74,6 +76,25 @@ class Database:
             print("✅ Система рейтингів ініціалізована")
         except Exception as e:
             print(f"ℹ️ Поле rating вже існує: {e}")
+
+    def init_like_limits(self):
+        """Ініціалізація таблиць для обмеження лайків"""
+        try:
+            # Таблиця для відстеження щоденних лайків
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS daily_likes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    likes_given INTEGER DEFAULT 0,
+                    date DATE NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users (id),
+                    UNIQUE(user_id, date)
+                )
+            ''')
+            self.conn.commit()
+            print("✅ Система обмеження лайків ініціалізована")
+        except Exception as e:
+            print(f"❌ Помилка ініціалізації обмеження лайків: {e}")
     
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
@@ -355,28 +376,101 @@ class Database:
             print(f"❌ Помилка отримання лайків: {e}")
             return 0
     
-    def add_like(self, from_user_id, to_user_id):
-        """Додавання лайку з оновленням рейтингу"""
+    def can_user_like(self, from_user_id):
+        """Перевірити чи може користувач ставити лайки (обмеження 50 лайків на день)"""
         try:
+            today = datetime.now().date()
+            
+            # Отримуємо user_id
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (from_user_id,))
+            from_user = self.cursor.fetchone()
+            if not from_user:
+                return False
+            
+            user_id = from_user[0]
+            
+            # Перевіряємо кількість лайків сьогодні
+            self.cursor.execute('''
+                SELECT likes_given FROM daily_likes 
+                WHERE user_id = ? AND date = ?
+            ''', (user_id, today))
+            
+            result = self.cursor.fetchone()
+            
+            if result:
+                likes_today = result[0]
+                if likes_today >= 50:  # Ліміт 50 лайків на день
+                    return False
+            else:
+                # Якщо запису немає, створюємо новий
+                self.cursor.execute('''
+                    INSERT INTO daily_likes (user_id, likes_given, date)
+                    VALUES (?, 0, ?)
+                ''', (user_id, today))
+                self.conn.commit()
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Помилка перевірки ліміту лайків: {e}")
+            return False
+    
+    def add_like(self, from_user_id, to_user_id):
+        """Додавання лайку з оновленням рейтингу та перевіркою обмежень"""
+        try:
+            # Перевіряємо чи не заблокований користувач
+            from_user_data = self.get_user(from_user_id)
+            to_user_data = self.get_user(to_user_id)
+            
+            if not from_user_data or not to_user_data:
+                return False, "Користувача не знайдено"
+            
+            if from_user_data.get('is_banned') or to_user_data.get('is_banned'):
+                return False, "Користувач заблокований"
+            
+            # Перевіряємо чи може користувач ставити лайки
+            if not self.can_user_like(from_user_id):
+                return False, "Досягнуто денний ліміт лайків (50)"
+            
+            # Перевіряємо чи вже існує лайк
+            if self.has_liked(from_user_id, to_user_id):
+                return False, "Ви вже лайкнули цього користувача"
+            
+            # Отримуємо user_id
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (from_user_id,))
             from_user = self.cursor.fetchone()
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (to_user_id,))
             to_user = self.cursor.fetchone()
             
             if not from_user or not to_user:
-                return False
+                return False, "Користувача не знайдено"
             
+            # Додаємо лайк
             self.cursor.execute('INSERT OR IGNORE INTO likes (from_user_id, to_user_id) VALUES (?, ?)', (from_user[0], to_user[0]))
+            
+            if self.cursor.rowcount == 0:
+                return False, "Лайк вже існує"
+            
+            # Оновлюємо кількість лайків
             self.cursor.execute('UPDATE users SET likes_count = likes_count + 1 WHERE id = ?', (to_user[0],))
             
             # ОНОВЛЮЄМО РЕЙТИНГ отримувача лайка
             self.update_rating_on_like(to_user_id)
             
+            # Оновлюємо щоденний лічильник лайків
+            today = datetime.now().date()
+            self.cursor.execute('''
+                UPDATE daily_likes 
+                SET likes_given = likes_given + 1 
+                WHERE user_id = ? AND date = ?
+            ''', (from_user[0], today))
+            
             self.conn.commit()
-            return True
+            return True, "Лайк успішно додано"
+            
         except Exception as e:
             print(f"❌ Помилка додавання лайку: {e}")
-            return False
+            return False, f"Помилка: {e}"
     
     def get_user_matches(self, telegram_id):
         """Отримання матчів користувача"""
@@ -507,6 +601,29 @@ class Database:
             print(f"❌ Помилка перевірки лайку: {e}")
             return False
 
+    def get_daily_likes_info(self, telegram_id):
+        """Отримати інформацію про щоденні лайки користувача"""
+        try:
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
+            user = self.cursor.fetchone()
+            if not user:
+                return 0, 50
+            
+            today = datetime.now().date()
+            self.cursor.execute('''
+                SELECT likes_given FROM daily_likes 
+                WHERE user_id = ? AND date = ?
+            ''', (user[0], today))
+            
+            result = self.cursor.fetchone()
+            likes_today = result[0] if result else 0
+            
+            return likes_today, 50  # Поточні лайки і ліміт
+            
+        except Exception as e:
+            print(f"❌ Помилка отримання інформації про лайки: {e}")
+            return 0, 50
+
     # АДМІН-ФУНКЦІЇ
     def get_statistics(self):
         """Отримання статистики"""
@@ -616,6 +733,12 @@ class Database:
             self.cursor.execute('''
                 DELETE FROM likes 
                 WHERE created_at < datetime('now', '-90 days')
+            ''')
+            
+            # Видаляємо старі записи щоденних лайків (старше 7 днів)
+            self.cursor.execute('''
+                DELETE FROM daily_likes 
+                WHERE date < date('now', '-7 days')
             ''')
             
             self.conn.commit()

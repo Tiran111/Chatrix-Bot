@@ -14,376 +14,599 @@ def format_profile_text(user_data, title=""):
         rating = user_data.get('rating', 5.0)
         profile_text = f"""👤 {title}
 
-*Ім'я:* {user_data.get('first_name', 'Не вказано')}
-*Вік:* {user_data.get('age', 'Не вказано')} років
+*Ім'я:* {user_data.get('first_name', 'Невідомо')}
+*Вік:* {user_data.get('age', 'Не вказано')}
 *Стать:* {gender_display}
 *Місто:* {user_data.get('city', 'Не вказано')}
 *Ціль:* {user_data.get('goal', 'Не вказано')}
-*⭐ Рейтинг:* {rating:.1f}/10.0
+*Про себе:* {user_data.get('bio', 'Не вказано')}
+*Рейтинг:* ⭐ {rating:.1f}/10.0
 
-*Про себе:*
-{user_data.get('bio', 'Не вказано')}"""
+💌 Натисни /like щоб лайкнути або /dislike щоб пропустити"""
     else:
-        # Якщо user_data - tuple (з бази даних)
-        # Отримуємо повну інформацію про користувача для правильного імені
-        from database.models import db
-        full_user_data = db.get_user_by_id(user_data[1])
-        
-        if full_user_data:
-            first_name = full_user_data.get('first_name', 'Користувач')
-            rating = full_user_data.get('rating', 5.0)
-        else:
-            # Якщо не вдалося отримати повні дані, використовуємо те, що є
-            first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
-            rating = 5.0
-        
+        # Якщо user_data - кортеж (з бази даних)
         gender_display = "👨 Чоловік" if user_data[5] == 'male' else "👩 Жінка"
+        rating = user_data[14] if len(user_data) > 14 else 5.0  # Індекс рейтингу
         profile_text = f"""👤 {title}
 
-*Ім'я:* {first_name}
-*Вік:* {user_data[4]} років
+*Ім'я:* {user_data[3] if user_data[3] else 'Невідомо'}
+*Вік:* {user_data[4] if user_data[4] else 'Не вказано'}
 *Стать:* {gender_display}
-*Місто:* {user_data[6]}
-*Ціль:* {user_data[8]}
-*⭐ Рейтинг:* {rating:.1f}/10.0
+*Місто:* {user_data[6] if user_data[6] else 'Не вказано'}
+*Ціль:* {user_data[8] if user_data[8] else 'Не вказано'}
+*Про себе:* {user_data[9] if user_data[9] else 'Не вказано'}
+*Рейтинг:* ⭐ {rating:.1f}/10.0
 
-*Про себе:*
-{user_data[9] if user_data[9] else "Не вказано"}"""
+💌 Натисни /like щоб лайкнути або /dislike щоб пропустити"""
     
     return profile_text
 
-async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пошук анкет"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    user_data, is_complete = db.get_user_profile(user.id)
-    
-    if not is_complete:
-        await update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
-        return
-    
-    # Перевіряємо чи є фото
-    if not db.get_main_photo(user.id):
-        await update.message.reply_text(
-            "❌ Додайте головне фото до профілю, щоб шукати анкети!",
-            reply_markup=get_main_menu(user.id)
-        )
-        return
-    
-    await update.message.reply_text("🔍 Шукаю анкети...")
-    
-    # Знаходимо випадкову анкету
-    random_user = db.get_random_user(user.id)
-    
-    if random_user:
-        # Додаємо запис про перегляд профілю
-        db.add_profile_view(user.id, random_user[1])
+async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data, title=""):
+    """Показати профіль користувача"""
+    try:
+        chat_id = update.effective_chat.id
         
-        await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
-        context.user_data['search_users'] = [random_user]
-        context.user_data['current_index'] = 0
-        context.user_data['search_type'] = 'random'
-    else:
+        # Отримуємо фото користувача
+        if isinstance(user_data, dict):
+            telegram_id = user_data.get('telegram_id')
+        else:
+            telegram_id = user_data[1]  # Індекс telegram_id
+        
+        photos = db.get_profile_photos(telegram_id)
+        
+        if photos:
+            # Відправляємо перше фото
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photos[0],
+                caption=format_profile_text(user_data, title),
+                parse_mode='Markdown',
+                reply_markup=get_search_navigation()
+            )
+            
+            # Якщо є додаткові фото, відправляємо їх окремо
+            for i, photo in enumerate(photos[1:], 1):
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo,
+                    caption=f"Фото {i+1}"
+                )
+        else:
+            # Якщо фото немає
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=format_profile_text(user_data, title),
+                parse_mode='Markdown',
+                reply_markup=get_search_navigation()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка показу профілю: {e}")
         await update.message.reply_text(
-            "😔 Наразі немає анкет для перегляду",
-            reply_markup=get_main_menu(user.id)
+            "❌ Помилка завантаження профілю. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def search_random(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Пошук випадкового користувача"""
+    try:
+        user_id = update.effective_user.id
+        
+        # Перевіряємо чи заповнений профіль
+        user, is_completed = db.get_user_profile(user_id)
+        if not is_completed:
+            await update.message.reply_text(
+                "❌ Спочатку заповніть свій профіль!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        # Отримуємо випадкового користувача
+        random_user = db.get_random_user(user_id)
+        
+        if random_user:
+            user_states[user_id] = {
+                'current_profile': random_user,
+                'search_type': 'random'
+            }
+            
+            await show_user_profile(update, context, random_user, "Знайомтесь!")
+        else:
+            await update.message.reply_text(
+                "❌ Наразі немає користувачів для пошуку. Спробуйте пізніше.",
+                reply_markup=get_main_menu()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка пошуку: {e}")
+        await update.message.reply_text(
+            "❌ Помилка пошуку. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
         )
 
 async def search_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Пошук за містом"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    user_data, is_complete = db.get_user_profile(user.id)
-    
-    if not is_complete:
-        await update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
-        return
-    
-    context.user_data['waiting_for_city'] = True
-    await update.message.reply_text("🏙️ Введіть назву міста для пошуку:")
-
-async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data, title=""):
-    """Показати профіль користувача"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    current_user_data = db.get_user(user.id)
-    if current_user_data and current_user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    profile_text = format_profile_text(user_data, title)
-    
-    if isinstance(user_data, dict):
-        telegram_id = user_data.get('telegram_id')
-    else:
-        telegram_id = user_data[1]
-    
-    context.user_data['current_profile_id'] = telegram_id
-    
-    main_photo = db.get_main_photo(telegram_id)
-    
-    if main_photo:
-        await update.message.reply_photo(
-            photo=main_photo, 
-            caption=profile_text,
-            reply_markup=get_search_navigation(),
-            parse_mode='Markdown'
-        )
-    else:
+    try:
+        user_id = update.effective_user.id
+        
+        # Перевіряємо чи заповнений профіль
+        user, is_completed = db.get_user_profile(user_id)
+        if not is_completed:
+            await update.message.reply_text(
+                "❌ Спочатку заповніть свій профіль!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        # Отримуємо місто користувача
+        user_data = db.get_user(user_id)
+        if user_data and user_data.get('city'):
+            city = user_data.get('city')
+            await update.message.reply_text(f"🔍 Шукаємо в вашому місті: {city}")
+            
+            # Пошук у місті користувача
+            users = db.get_users_by_city(city, user_id)
+            
+            if users:
+                user_states[user_id] = {
+                    'current_profile': users[0],
+                    'search_results': users,
+                    'current_index': 0,
+                    'search_type': 'city'
+                }
+                
+                await show_user_profile(update, context, users[0], f"Знайомтесь у місті {city}!")
+            else:
+                await update.message.reply_text(
+                    f"❌ У вашому місті {city} поки немає інших користувачів.",
+                    reply_markup=get_main_menu()
+                )
+        else:
+            await update.message.reply_text(
+                "❌ У вашому профілі не вказано місто. Спочатку заповніть профіль повністю.",
+                reply_markup=get_main_menu()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка пошуку за містом: {e}")
         await update.message.reply_text(
-            profile_text,
-            reply_markup=get_search_navigation(),
-            parse_mode='Markdown'
+            "❌ Помилка пошуку. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def search_by_city_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка введення міста для пошуку"""
+    try:
+        user_id = update.effective_user.id
+        city = update.message.text
+        
+        # Перевіряємо чи заповнений профіль
+        user, is_completed = db.get_user_profile(user_id)
+        if not is_completed:
+            await update.message.reply_text(
+                "❌ Спочатку заповніть свій профіль!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        await update.message.reply_text(f"🔍 Шукаємо в місті: {city}")
+        
+        # Пошук у вказаному місті
+        users = db.get_users_by_city(city, user_id)
+        
+        if users:
+            user_states[user_id] = {
+                'current_profile': users[0],
+                'search_results': users,
+                'current_index': 0,
+                'search_type': 'city_input'
+            }
+            
+            await show_user_profile(update, context, users[0], f"Знайомтесь у місті {city}!")
+        else:
+            await update.message.reply_text(
+                f"❌ У місті {city} поки немає користувачів.",
+                reply_markup=get_main_menu()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка пошуку за містом: {e}")
+        await update.message.reply_text(
+            "❌ Помилка пошуку. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Наступний профіль у пошуку"""
+    try:
+        user_id = update.effective_user.id
+        state = user_states.get(user_id, {})
+        
+        if not state or 'search_type' not in state:
+            await update.message.reply_text(
+                "❌ Спочатку почніть пошук!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        search_type = state.get('search_type')
+        
+        if search_type == 'random':
+            # Для випадкового пошуку - отримуємо нового випадкового користувача
+            random_user = db.get_random_user(user_id)
+            
+            if random_user:
+                user_states[user_id]['current_profile'] = random_user
+                await show_user_profile(update, context, random_user, "Знайомтесь!")
+            else:
+                await update.message.reply_text(
+                    "❌ Наразі немає більше користувачів для пошуку.",
+                    reply_markup=get_main_menu()
+                )
+        
+        elif search_type in ['city', 'city_input', 'advanced']:
+            # Для пошуку з результатами - переходимо до наступного
+            results = state.get('search_results', [])
+            current_index = state.get('current_index', 0)
+            
+            if current_index < len(results) - 1:
+                next_index = current_index + 1
+                user_states[user_id]['current_index'] = next_index
+                user_states[user_id]['current_profile'] = results[next_index]
+                
+                await show_user_profile(update, context, results[next_index], "Наступний профіль")
+            else:
+                await update.message.reply_text(
+                    "❌ Це останній профіль у пошуку.",
+                    reply_markup=get_search_navigation()
+                )
+        
+        else:
+            await update.message.reply_text(
+                "❌ Невідомий тип пошуку.",
+                reply_markup=get_main_menu()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка переходу до наступного профілю: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def previous_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Попередній профіль у пошуку"""
+    try:
+        user_id = update.effective_user.id
+        state = user_states.get(user_id, {})
+        
+        if not state or 'search_type' not in state:
+            await update.message.reply_text(
+                "❌ Спочатку почніть пошук!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        search_type = state.get('search_type')
+        
+        if search_type in ['city', 'city_input', 'advanced']:
+            results = state.get('search_results', [])
+            current_index = state.get('current_index', 0)
+            
+            if current_index > 0:
+                prev_index = current_index - 1
+                user_states[user_id]['current_index'] = prev_index
+                user_states[user_id]['current_profile'] = results[prev_index]
+                
+                await show_user_profile(update, context, results[prev_index], "Попередній профіль")
+            else:
+                await update.message.reply_text(
+                    "❌ Це перший профіль у пошуку.",
+                    reply_markup=get_search_navigation()
+                )
+        else:
+            await update.message.reply_text(
+                "❌ Для випадкового пошуку немає попередніх профілів.",
+                reply_markup=get_search_navigation()
+            )
+            
+    except Exception as e:
+        print(f"❌ Помилка переходу до попереднього профілю: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
         )
 
 async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка лайку"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    current_profile_id = context.user_data.get('current_profile_id')
-    
-    if current_profile_id:
-        success = db.add_like(user.id, current_profile_id)
+    try:
+        user_id = update.effective_user.id
+        state = user_states.get(user_id, {})
+        
+        if not state or 'current_profile' not in state:
+            await update.message.reply_text(
+                "❌ Спочатку виберіть користувача для лайку!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        current_profile = state['current_profile']
+        
+        if isinstance(current_profile, dict):
+            to_user_id = current_profile.get('telegram_id')
+        else:
+            to_user_id = current_profile[1]  # Індекс telegram_id
+        
+        # Перевіряємо чи не лайкаємо самі себе
+        if user_id == to_user_id:
+            await update.message.reply_text(
+                "❌ Ви не можете лайкнути самого себе!",
+                reply_markup=get_search_navigation()
+            )
+            return
+        
+        # Додаємо лайк
+        success, message = db.add_like(user_id, to_user_id)
+        
         if success:
-            # Відправляємо сповіщення про лайк
-            await notification_system.notify_new_like(context, user.id, current_profile_id)
+            # Перевіряємо чи це взаємний лайк
+            if db.has_liked(to_user_id, user_id):
+                match_message = "🎉 У вас взаємний лайк! Тепер ви можете спілкуватися."
+                await update.message.reply_text(match_message)
+                
+                # Відправляємо сповіщення іншому користувачу
+                await notification_system.send_match_notification(context.bot, user_id, to_user_id)
             
-            # Перевіряємо чи це взаємний лайк (матч)
-            is_mutual = db.has_liked(current_profile_id, user.id)
-            
-            if is_mutual:
-                # Відправляємо сповіщення про матч
-                await notification_system.notify_new_match(context, user.id, current_profile_id)
-                await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
-            else:
-                await update.message.reply_text("❤️ Ви поставили лайк!")
+            await update.message.reply_text(
+                f"✅ {message}",
+                reply_markup=get_search_navigation()
+            )
         else:
-            await update.message.reply_text("❌ Помилка при лайку")
-    else:
-        await update.message.reply_text("❌ Не знайдено профіль для лайку")
-
-async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Наступний профіль"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    search_users = context.user_data.get('search_users', [])
-    current_index = context.user_data.get('current_index', 0)
-    search_type = context.user_data.get('search_type', 'random')
-    
-    if not search_users:
-        await search_profiles(update, context)
-        return
-    
-    # Якщо це пошук за містом, шукаємо наступного користувача
-    if search_type == 'city':
-        if current_index < len(search_users) - 1:
-            current_index += 1
-            context.user_data['current_index'] = current_index
-            user_data = search_users[current_index]
+            await update.message.reply_text(
+                f"❌ {message}",
+                reply_markup=get_search_navigation()
+            )
             
-            # Додаємо запис про перегляд профілю
-            db.add_profile_view(user.id, user_data[1])
-            
-            await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
-        else:
-            await update.message.reply_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
-    else:
-        # Для випадкового пошуку - шукаємо нову анкету
-        random_user = db.get_random_user(user.id)
-        if random_user:
-            # Додаємо запис про перегляд профілю
-            db.add_profile_view(user.id, random_user[1])
-            
-            await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
-            context.user_data['search_users'] = [random_user]
-        else:
-            await update.message.reply_text("😔 Більше немає анкет для перегляду", reply_markup=get_main_menu(user.id))
-
-async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка навігації"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    text = update.message.text
-    
-    if text == "🔙 Меню":
-        await update.message.reply_text("👋 Повертаємось до головного меню", reply_markup=get_main_menu(user.id))
-    elif text == "🔙 Пошук":
-        await search_profiles(update, context)
-    elif text == "🔙 Скасувати":
-        await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
-
-async def show_top_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показати вибір топу"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    keyboard = [
-        ['👨 Топ чоловіків', '👩 Топ жінок'],
-        ['🏆 Загальний топ', '🔙 Меню']
-    ]
-    
-    await update.message.reply_text(
-        "🏆 Оберіть категорію для перегляду топу:",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
-
-async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Мої матчі"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    matches = db.get_user_matches(user.id)
-    
-    if matches:
-        await update.message.reply_text("💌 *Ваші матчі:*", parse_mode='Markdown')
-        for match in matches:
-            profile_text = format_profile_text(match, "💕 МАТЧ!")
-            main_photo = db.get_main_photo(match[1])
-            
-            if main_photo:
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=profile_text,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
-    else:
-        await update.message.reply_text("😔 У вас ще немає матчів", reply_markup=get_main_menu(user.id))
-
-async def show_likes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показати хто мене лайкнув"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    # Отримуємо список користувачів, які лайкнули поточного користувача
-    likers = db.get_user_likers(user.id)
-    
-    if likers:
-        await update.message.reply_text(f"❤️ *Вас лайкнули ({len(likers)}):*", parse_mode='Markdown')
-        
-        for liker in likers:
-            # Перевіряємо чи це взаємний лайк (матч)
-            is_mutual = db.has_liked(user.id, liker[1])
-            status = "💕 МАТЧ" if is_mutual else "❤️ Лайкнув(ла) вас"
-            
-            profile_text = format_profile_text(liker, status)
-            main_photo = db.get_main_photo(liker[1])
-            
-            if main_photo:
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=profile_text,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
-    else:
+    except Exception as e:
+        print(f"❌ Помилка лайку: {e}")
         await update.message.reply_text(
-            "😔 Вас ще ніхто не лайкнув\n\n"
-            "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
-            reply_markup=get_main_menu(user.id),
-            parse_mode='Markdown'
+            "❌ Помилка лайку. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
         )
 
-async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка вибору топу"""
-    user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    text = update.message.text
-    
-    if text == "👨 Топ чоловіків":
-        top_users = db.get_top_users_by_rating(limit=10, gender='male')
-        title = "👨 Топ чоловіків"
-    elif text == "👩 Топ жінок":
-        top_users = db.get_top_users_by_rating(limit=10, gender='female')
-        title = "👩 Топ жінок"
-    else:  # "🏆 Загальний топ"
-        top_users = db.get_top_users_by_rating(limit=10)
-        title = "🏆 Загальний топ"
-    
-    if top_users:
-        await update.message.reply_text(f"**{title}** 🏆", parse_mode='Markdown')
-        for i, user_data in enumerate(top_users, 1):
-            print(f"🔍 [TOP] Дані користувача {i}: {user_data}")
-            print(f"🔍 [TOP] Індекс 3 (first_name): '{user_data[3]}'")
-            print(f"🔍 [TOP] Індекс 2 (username): '{user_data[2]}'")
-            print(f"🔍 [TOP] Усі індекси: 0={user_data[0]}, 1={user_data[1]}, 2={user_data[2]}, 3={user_data[3]}")
+async def handle_dislike(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка дізлайку (пропуск)"""
+    try:
+        user_id = update.effective_user.id
         
-            likes_count = user_data[12] if len(user_data) > 12 else 0
-            rating = user_data[14] if len(user_data) > 14 else 5.0
-            profile_text = format_profile_text(user_data, f"🏅 #{i} | ⭐ {rating:.1f} | ❤️ {likes_count} лайків")
-            main_photo = db.get_main_photo(user_data[1])
-            
-            if main_photo:
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=profile_text,
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
-        
-        # Показуємо кнопку для повернення до вибору топу
-        keyboard = [
-            ['👨 Топ чоловіків', '👩 Топ жінок'],
-            ['🏆 Загальний топ', '🔙 Меню']
-        ]
         await update.message.reply_text(
-            "🏆 Оберіть іншу категорію або поверніться в меню:",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            "👌 Користувача пропущено",
+            reply_markup=get_search_navigation()
         )
-    else:
-        await update.message.reply_text(f"😔 Ще немає користувачів у {title}", reply_markup=get_main_menu(user.id))
+        
+        # Автоматично переходимо до наступного профілю
+        await next_profile(update, context)
+        
+    except Exception as e:
+        print(f"❌ Помилка дізлайку: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def advanced_search_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Меню розширеного пошуку"""
+    try:
+        user_id = update.effective_user.id
+        
+        # Перевіряємо чи заповнений профіль
+        user, is_completed = db.get_user_profile(user_id)
+        if not is_completed:
+            await update.message.reply_text(
+                "❌ Спочатку заповніть свій профіль!",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        # Встановлюємо стан для розширеного пошуку
+        user_states[user_id] = {
+            'state': States.ADVANCED_SEARCH_GENDER
+        }
+        
+        await update.message.reply_text(
+            "🔍 *Розширений пошук*\n\n"
+            "Оберіть стать для пошуку:",
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardMarkup([
+                ["👨 Чоловіки", "👩 Жінки"],
+                ["👥 Всі", "🔙 Назад"]
+            ], resize_keyboard=True)
+        )
+        
+    except Exception as e:
+        print(f"❌ Помилка меню розширеного пошуку: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def advanced_search_gender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка вибору статі для розширеного пошуку"""
+    try:
+        user_id = update.effective_user.id
+        gender_choice = update.message.text
+        
+        gender_map = {
+            "👨 Чоловіки": "male",
+            "👩 Жінки": "female",
+            "👥 Всі": "all"
+        }
+        
+        if gender_choice not in gender_map:
+            await update.message.reply_text(
+                "❌ Будь ласка, оберіть стать з клавіатури:",
+                reply_markup=ReplyKeyboardMarkup([
+                    ["👨 Чоловіки", "👩 Жінки"],
+                    ["👥 Всі", "🔙 Назад"]
+                ], resize_keyboard=True)
+            )
+            return
+        
+        if gender_choice == "🔙 Назад":
+            user_states[user_id] = {}
+            await update.message.reply_text(
+                "🔙 Повертаємось до головного меню",
+                reply_markup=get_main_menu()
+            )
+            return
+        
+        # Зберігаємо вибір статі
+        context.user_data['advanced_search_gender'] = gender_map[gender_choice]
+        
+        # Переходимо до вибору міста
+        user_states[user_id] = {
+            'state': States.ADVANCED_SEARCH_CITY
+        }
+        
+        await update.message.reply_text(
+            "🏙️ Введіть місто для пошуку (або натисніть 'Пропустити'):",
+            reply_markup=ReplyKeyboardMarkup([
+                ["Пропустити", "🔙 Назад"]
+            ], resize_keyboard=True)
+        )
+        
+    except Exception as e:
+        print(f"❌ Помилка вибору статі: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def advanced_search_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка введення міста для розширеного пошуку"""
+    try:
+        user_id = update.effective_user.id
+        city_input = update.message.text
+        
+        if city_input == "🔙 Назад":
+            # Повертаємось до вибору статі
+            user_states[user_id] = {
+                'state': States.ADVANCED_SEARCH_GENDER
+            }
+            
+            await update.message.reply_text(
+                "🔍 Оберіть стать для пошуку:",
+                reply_markup=ReplyKeyboardMarkup([
+                    ["👨 Чоловіки", "👩 Жінки"],
+                    ["👥 Всі", "🔙 Назад"]
+                ], resize_keyboard=True)
+            )
+            return
+        
+        if city_input == "Пропустити":
+            city = None
+        else:
+            city = city_input
+        
+        # Зберігаємо місто
+        context.user_data['advanced_search_city'] = city
+        
+        # Переходимо до вибору цілі
+        user_states[user_id] = {
+            'state': States.ADVANCED_SEARCH_GOAL
+        }
+        
+        await update.message.reply_text(
+            "🎯 Оберіть ціль для пошуку:",
+            reply_markup=ReplyKeyboardMarkup([
+                ["💕 Серйозні стосунки", "💬 Дружба"],
+                ["🎉 Несерйозні стосунки", "🤷 Поки не знаю"],
+                ["Пропустити", "🔙 Назад"]
+            ], resize_keyboard=True)
+        )
+        
+    except Exception as e:
+        print(f"❌ Помилка введення міста: {e}")
+        await update.message.reply_text(
+            "❌ Помилка. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
+
+async def advanced_search_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка вибору цілі для розширеного пошуку"""
+    try:
+        user_id = update.effective_user.id
+        goal_input = update.message.text
+        
+        goal_map = {
+            "💕 Серйозні стосунки": "serious",
+            "💬 Дружба": "friendship", 
+            "🎉 Несерйозні стосунки": "casual",
+            "🤷 Поки не знаю": "unknown",
+            "Пропустити": None
+        }
+        
+        if goal_input == "🔙 Назад":
+            # Повертаємось до введення міста
+            user_states[user_id] = {
+                'state': States.ADVANCED_SEARCH_CITY
+            }
+            
+            await update.message.reply_text(
+                "🏙️ Введіть місто для пошуку (або натисніть 'Пропустити'):",
+                reply_markup=ReplyKeyboardMarkup([
+                    ["Пропустити", "🔙 Назад"]
+                ], resize_keyboard=True)
+            )
+            return
+        
+        if goal_input not in goal_map:
+            await update.message.reply_text(
+                "❌ Будь ласка, оберіть ціль з клавіатури:",
+                reply_markup=ReplyKeyboardMarkup([
+                    ["💕 Серйозні стосунки", "💬 Дружба"],
+                    ["🎉 Несерйозні стосунки", "🤷 Поки не знаю"],
+                    ["Пропустити", "🔙 Назад"]
+                ], resize_keyboard=True)
+            )
+            return
+        
+        # Отримуємо параметри пошуку
+        gender = context.user_data.get('advanced_search_gender', 'all')
+        city = context.user_data.get('advanced_search_city')
+        goal = goal_map[goal_input]
+        
+        # Виконуємо пошук
+        users = db.search_users_advanced(user_id, gender, city, goal)
+        
+        if users:
+            user_states[user_id] = {
+                'current_profile': users[0],
+                'search_results': users,
+                'current_index': 0,
+                'search_type': 'advanced'
+            }
+            
+            # Формуємо опис параметрів пошуку
+            search_desc = "🔍 Розширений пошук\n"
+            search_desc += f"Стать: {gender if gender != 'all' else 'Всі'}\n"
+            search_desc += f"Місто: {city if city else 'Будь-яке'}\n" 
+            search_desc += f"Ціль: {goal_input if goal_input != 'Пропустити' else 'Будь-яка'}"
+            
+            await show_user_profile(update, context, users[0], search_desc)
+        else:
+            await update.message.reply_text(
+                "❌ За вашими критеріями не знайдено користувачів.",
+                reply_markup=get_main_menu()
+            )
+        
+        # Очищаємо тимчасові дані
+        context.user_data.pop('advanced_search_gender', None)
+        context.user_data.pop('advanced_search_city', None)
+        
+    except Exception as e:
+        print(f"❌ Помилка вибору цілі: {e}")
+        await update.message.reply_text(
+            "❌ Помилка пошуку. Спробуйте ще раз.",
+            reply_markup=get_main_menu()
+        )
