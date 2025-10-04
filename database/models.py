@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 
 # Шлях до бази даних
-DATABASE_PATH = 'dating_bot.db'
+DATABASE_PATH = os.environ.get('DATABASE_URL', 'dating_bot.db').replace('postgres://', 'sqlite://') if 'postgres' in os.environ.get('DATABASE_URL', '') else 'dating_bot.db'
 
 class Database:
     def __init__(self):
@@ -418,6 +418,10 @@ class Database:
     def add_like(self, from_user_id, to_user_id):
         """Додавання лайку з оновленням рейтингу та перевіркою обмежень"""
         try:
+            # Перевіряємо чи не лайкаємо самі себе
+            if from_user_id == to_user_id:
+                return False, "Ви не можете лайкнути самого себе!"
+            
             # Перевіряємо чи не заблокований користувач
             from_user_data = self.get_user(from_user_id)
             to_user_data = self.get_user(to_user_id)
