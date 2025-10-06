@@ -5,6 +5,7 @@ from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
+import sys
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -193,6 +194,25 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     try:
         print("🚀 Запуск бота...")
+        
+        # Перевірка токена перед створенням додатка
+        if not TOKEN:
+            print("❌ КРИТИЧНА ПОМИЛКА: TELEGRAM_BOT_TOKEN не встановлено!")
+            print("📝 Інструкція:")
+            print("1. Перейдіть до @BotFather в Telegram")
+            print("2. Створіть нового бота командою /newbot")
+            print("3. Отримайте токен")
+            print("4. Додайте токен як змінну оточення TELEGRAM_BOT_TOKEN на Railway")
+            print("5. Перезапустіть додаток")
+            sys.exit(1)
+        
+        # Перевірка формату токена
+        if ':' not in TOKEN:
+            print("❌ НЕВІРНИЙ ФОРМАТ ТОКЕНА!")
+            print("Токен повинен мати формат: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz")
+            sys.exit(1)
+            
+        print(f"✅ Токен отримано, починаю запуск...")
         
         application = Application.builder().token(TOKEN).build()
         print("✅ Додаток створено")
