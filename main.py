@@ -5,7 +5,6 @@ from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
-import sys
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -129,7 +128,93 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_city'] = False
         return
     
-    # 5. Обробка звичайних команд меню
+    # 5. СПОЧАТКУ ПЕРЕВІРЯЄМО ПІДТВЕРДЖЕННЯ РОЗСИЛКИ
+    if user.id == ADMIN_ID:
+        if text in ["✅ Так, відправити", "❌ Ні, скасувати"] and 'broadcast_message' in context.user_data:
+            print(f"🔧 [UNIVERSAL] Підтвердження розсилки: {text}")
+            from handlers.admin import confirm_broadcast
+            await confirm_broadcast(update, context)
+            return
+        
+        # Перевіряємо інші адмін-стани
+        elif state == States.ADMIN_SEARCH_USER:
+            from handlers.admin import handle_user_search
+            await handle_user_search(update, context)
+            return
+        elif state == States.ADMIN_BAN_USER:
+            from handlers.admin import handle_ban_user
+            await handle_ban_user(update, context)
+            return
+        elif state == States.ADMIN_UNBAN_USER:
+            from handlers.admin import handle_unban_user
+            await handle_unban_user(update, context)
+            return
+        elif state == States.ADMIN_BAN_BY_ID:
+            from handlers.admin import handle_ban_by_id
+            await handle_ban_by_id(update, context)
+            return
+        elif state == States.ADMIN_BAN_BY_MESSAGE:
+            from handlers.admin import handle_ban_by_message
+            await handle_ban_by_message(update, context)
+            return
+        elif state == States.ADMIN_SEND_MESSAGE:
+            from handlers.admin import handle_send_message
+            await handle_send_message(update, context)
+            return
+    
+    # 6. Обробка адмін-меню
+    if user.id == ADMIN_ID:
+        if text in ["📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
+            from handlers.admin import handle_admin_actions
+            await handle_admin_actions(update, context)
+            return
+        elif text in ["📋 Список користувачів", "🔍 Пошук користувача", "🚫 Заблокувати", "✅ Розблокувати", "📧 Надіслати повідомлення"]:
+            from handlers.admin import handle_users_management
+            await handle_users_management(update, context)
+            return
+        elif text in ["🔍 Список заблокованих", "🆔 Заблокувати за ID", "📧 Заблокувати за повідомленням", "✅ Розблокувати всіх"]:
+            from handlers.admin import handle_ban_management
+            await handle_ban_management(update, context)
+            return
+    
+    # 7. Обробка звичайних команд користувача
+    if text == "👨‍💼 Зв'язок з адміном":
+        context.user_data['contact_admin'] = True
+        await update.message.reply_text(
+            "📧 Напишіть ваше повідомлення для адміністратора. Він отримає його в особисті повідомлення:",
+            reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
+        )
+        return
+    
+    # 8. Обробка повідомлення для адміна
+    if context.user_data.get('contact_admin'):
+        # Відправляємо повідомлення адміну
+        admin_message = f"📩 *Нове повідомлення від користувача:*\n\n" \
+                       f"👤 Ім'я: {user.first_name}\n" \
+                       f"🆔 ID: {user.id}\n" \
+                       f"📧 Username: @{user.username if user.username else 'Немає'}\n\n" \
+                       f"💬 *Повідомлення:*\n{text}"
+        
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_message,
+                parse_mode='Markdown'
+            )
+            await update.message.reply_text(
+                "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
+                reply_markup=get_main_menu(user.id)
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Помилка відправки повідомлення. Спробуйте пізніше.",
+                reply_markup=get_main_menu(user.id)
+            )
+        
+        context.user_data['contact_admin'] = False
+        return
+    
+    # 9. Обробка звичайних команд меню
     if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
         from handlers.profile import start_profile_creation
         await start_profile_creation(update, context)
@@ -185,7 +270,13 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_top_selection(update, context)
         return
     
-    # 6. Якщо нічого не підійшло
+    # 10. Обробка розсилки (без стану BROADCAST)
+    if user.id == ADMIN_ID and text and 'broadcast_message' not in context.user_data:
+        from handlers.admin import handle_broadcast_message
+        await handle_broadcast_message(update, context)
+        return
+    
+    # 11. Якщо нічого не підійшло
     await update.message.reply_text(
         "❌ Команда не розпізнана. Спробуйте обрати пункт з меню:",
         reply_markup=get_main_menu(user.id)
@@ -194,25 +285,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     try:
         print("🚀 Запуск бота...")
-        
-        # Перевірка токена перед створенням додатка
-        if not TOKEN:
-            print("❌ КРИТИЧНА ПОМИЛКА: TELEGRAM_BOT_TOKEN не встановлено!")
-            print("📝 Інструкція:")
-            print("1. Перейдіть до @BotFather в Telegram")
-            print("2. Створіть нового бота командою /newbot")
-            print("3. Отримайте токен")
-            print("4. Додайте токен як змінну оточення TELEGRAM_BOT_TOKEN на Railway")
-            print("5. Перезапустіть додаток")
-            sys.exit(1)
-        
-        # Перевірка формату токена
-        if ':' not in TOKEN:
-            print("❌ НЕВІРНИЙ ФОРМАТ ТОКЕНА!")
-            print("Токен повинен мати формат: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz")
-            sys.exit(1)
-            
-        print(f"✅ Токен отримано, починаю запуск...")
         
         application = Application.builder().token(TOKEN).build()
         print("✅ Додаток створено")
