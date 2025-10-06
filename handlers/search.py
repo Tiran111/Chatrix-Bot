@@ -150,7 +150,7 @@ async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         )
 
 async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка лайку"""
+    """Обробка лайку - ВИПРАВЛЕНА ВЕРСІЯ"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
@@ -181,6 +181,7 @@ async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Не знайдено профіль для лайку")
 
+# Решта функцій залишаються без змін
 async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Наступний профіль"""
     user = update.effective_user
