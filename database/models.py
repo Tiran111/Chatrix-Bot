@@ -1,9 +1,9 @@
 import sqlite3
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Шлях до бази даних
-DATABASE_PATH = os.environ.get('DATABASE_URL', 'dating_bot.db').replace('postgres://', 'sqlite://') if 'postgres' in os.environ.get('DATABASE_URL', '') else 'dating_bot.db'
+DATABASE_PATH = 'dating_bot.db'
 
 class Database:
     def __init__(self):
@@ -11,8 +11,6 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         self.init_db()
-        self.init_rating_system()
-        self.init_like_limits()
     
     def init_db(self):
         """Ініціалізація бази даних"""
@@ -34,7 +32,8 @@ class Database:
                 has_photo BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 likes_count INTEGER DEFAULT 0,
-                is_banned BOOLEAN DEFAULT FALSE
+                is_banned BOOLEAN DEFAULT FALSE,
+                rating REAL DEFAULT 5.0
             )
         ''')
         
@@ -62,39 +61,32 @@ class Database:
             )
         ''')
         
+        # Таблиця для відстеження щоденних лайків
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS daily_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                likes_given INTEGER DEFAULT 0,
+                date DATE NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(user_id, date)
+            )
+        ''')
+        
+        # Таблиця для переглядів профілів
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS profile_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                viewer_id INTEGER NOT NULL,
+                viewed_user_id INTEGER NOT NULL,
+                viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (viewer_id) REFERENCES users (id),
+                FOREIGN KEY (viewed_user_id) REFERENCES users (id)
+            )
+        ''')
+        
         self.conn.commit()
         print("✅ База даних ініціалізована")
-    
-    def init_rating_system(self):
-        """Ініціалізація системи рейтингів"""
-        try:
-            # Додаємо поле рейтинга якщо його немає
-            self.cursor.execute('''
-                ALTER TABLE users ADD COLUMN rating REAL DEFAULT 5.0
-            ''')
-            self.conn.commit()
-            print("✅ Система рейтингів ініціалізована")
-        except Exception as e:
-            print(f"ℹ️ Поле rating вже існує: {e}")
-
-    def init_like_limits(self):
-        """Ініціалізація таблиць для обмеження лайків"""
-        try:
-            # Таблиця для відстеження щоденних лайків
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS daily_likes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    likes_given INTEGER DEFAULT 0,
-                    date DATE NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users (id),
-                    UNIQUE(user_id, date)
-                )
-            ''')
-            self.conn.commit()
-            print("✅ Система обмеження лайків ініціалізована")
-        except Exception as e:
-            print(f"❌ Помилка ініціалізації обмеження лайків: {e}")
     
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
@@ -497,56 +489,6 @@ class Database:
             print(f"❌ Помилка отримання матчів: {e}")
             return []
     
-    def get_top_users(self, limit=10):
-        """Отримання топу користувачів за лайками"""
-        try:
-            self.cursor.execute('''
-                SELECT * FROM users 
-                WHERE is_banned = FALSE AND age IS NOT NULL AND has_photo = TRUE
-                AND rating IS NOT NULL
-                ORDER BY rating DESC, likes_count DESC 
-                LIMIT ?
-            ''', (limit,))
-        
-            users = self.cursor.fetchall()
-            print(f"🔍 [MODELS] get_top_users знайдено: {len(users)} користувачів")
-            for i, user in enumerate(users):
-                print(f"🔍 [MODELS] Користувач {i}: ID={user[1]}, first_name='{user[3]}', username='{user[2]}'")
-        
-            return users
-        except Exception as e:
-            print(f"❌ Помилка отримання топу: {e}")
-            return []
-
-    def get_top_users_by_gender(self, limit=10, gender=None):
-        """Отримання топу користувачів за статтю"""
-        try:
-            query = '''
-                SELECT * FROM users 
-                WHERE is_banned = FALSE AND age IS NOT NULL AND has_photo = TRUE
-                AND rating IS NOT NULL
-            '''
-        
-            params = []
-            if gender:
-                query += ' AND gender = ?'
-                params.append(gender)
-        
-            query += ' ORDER BY rating DESC, likes_count DESC LIMIT ?'
-            params.append(limit)
-        
-            self.cursor.execute(query, params)
-            users = self.cursor.fetchall()
-        
-            print(f"🔍 [MODELS] get_top_users_by_gender знайдено: {len(users)} користувачів")
-            for i, user in enumerate(users):
-                print(f"🔍 [MODELS] Користувач {i}: ID={user[1]}, first_name='{user[3]}', username='{user[2]}'")
-        
-            return users
-        except Exception as e:
-            print(f"❌ Помилка отримання топу за статтю: {e}")
-            return []
-
     def get_top_users_by_rating(self, limit=10, gender=None):
         """Топ користувачів по рейтингу"""
         try:
@@ -604,6 +546,25 @@ class Database:
         except Exception as e:
             print(f"❌ Помилка перевірки лайку: {e}")
             return False
+
+    def add_profile_view(self, viewer_id, viewed_user_id):
+        """Додати запис про перегляд профілю"""
+        try:
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (viewer_id,))
+            viewer = self.cursor.fetchone()
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (viewed_user_id,))
+            viewed = self.cursor.fetchone()
+            
+            if viewer and viewed:
+                self.cursor.execute('''
+                    INSERT INTO profile_views (viewer_id, viewed_user_id)
+                    VALUES (?, ?)
+                ''', (viewer[0], viewed[0]))
+                self.conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Помилка додавання перегляду: {e}")
+        return False
 
     def get_daily_likes_info(self, telegram_id):
         """Отримати інформацію про щоденні лайки користувача"""

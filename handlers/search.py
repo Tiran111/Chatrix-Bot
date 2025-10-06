@@ -14,26 +14,41 @@ def format_profile_text(user_data, title=""):
         rating = user_data.get('rating', 5.0)
         profile_text = f"""👤 {title}
 
-*Ім'я:* {user_data.get('first_name', 'Невідомо')}
-*Вік:* {user_data.get('age', 'Не вказано')}
+*Ім'я:* {user_data.get('first_name', 'Не вказано')}
+*Вік:* {user_data.get('age', 'Не вказано')} років
 *Стать:* {gender_display}
 *Місто:* {user_data.get('city', 'Не вказано')}
 *Ціль:* {user_data.get('goal', 'Не вказано')}
-*Про себе:* {user_data.get('bio', 'Не вказано')}
-*Рейтинг:* ⭐ {rating:.1f}/10.0"""
+*⭐ Рейтинг:* {rating:.1f}/10.0
+
+*Про себе:*
+{user_data.get('bio', 'Не вказано')}"""
     else:
-        # Якщо user_data - кортеж (з бази даних)
+        # Якщо user_data - tuple (з бази даних)
+        # Отримуємо повну інформацію про користувача для правильного імені
+        from database.models import db
+        full_user_data = db.get_user_by_id(user_data[1])
+        
+        if full_user_data:
+            first_name = full_user_data.get('first_name', 'Користувач')
+            rating = full_user_data.get('rating', 5.0)
+        else:
+            # Якщо не вдалося отримати повні дані, використовуємо те, що є
+            first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
+            rating = 5.0
+        
         gender_display = "👨 Чоловік" if user_data[5] == 'male' else "👩 Жінка"
-        rating = user_data[14] if len(user_data) > 14 else 5.0  # Індекс рейтингу
         profile_text = f"""👤 {title}
 
-*Ім'я:* {user_data[3] if user_data[3] else 'Невідомо'}
-*Вік:* {user_data[4] if user_data[4] else 'Не вказано'}
+*Ім'я:* {first_name}
+*Вік:* {user_data[4]} років
 *Стать:* {gender_display}
-*Місто:* {user_data[6] if user_data[6] else 'Не вказано'}
-*Ціль:* {user_data[8] if user_data[8] else 'Не вказано'}
-*Про себе:* {user_data[9] if user_data[9] else 'Не вказано'}
-*Рейтинг:* ⭐ {rating:.1f}/10.0"""
+*Місто:* {user_data[6]}
+*Ціль:* {user_data[8]}
+*⭐ Рейтинг:* {rating:.1f}/10.0
+
+*Про себе:*
+{user_data[9] if user_data[9] else "Не вказано"}"""
     
     return profile_text
 
