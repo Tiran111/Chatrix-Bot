@@ -1,6 +1,6 @@
+import os
 import logging
 from telegram.ext import Updater, CommandHandler
-from config import TOKEN
 
 # Налаштування логування
 logging.basicConfig(
@@ -11,15 +11,21 @@ logger = logging.getLogger(__name__)
 
 def start(update, context):
     user = update.message.from_user
-    update.message.reply_text(f'Привіт {user.first_name}! Бот працює! ✅')
+    update.message.reply_text(f'Привіт {user.first_name}! Бот запущений! ✅')
 
 def main():
     try:
         logger.info("🚀 Запуск бота...")
         
-        # Проста перевірка токена
-        if not TOKEN or TOKEN == "placeholder-token":
-            logger.error("❌ Токен не встановлено!")
+        # Отримуємо токен
+        TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+        
+        if not TOKEN:
+            logger.error("❌ Токен не знайдено!")
+            # Виведемо всі змінні для дебагу
+            for key, value in os.environ.items():
+                if 'BOT' in key or 'TOKEN' in key:
+                    logger.info(f"🔍 {key}: {value}")
             return
             
         logger.info(f"✅ Токен отримано, довжина: {len(TOKEN)}")
