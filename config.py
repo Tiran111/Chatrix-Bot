@@ -1,7 +1,11 @@
 import os
 
-# Отримуємо змінні оточення
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # ТОКЕН БУДЕ БРАТИСЯ З RAILWAY
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+print(f"Token from env: {TOKEN}")  # Для дебагу
+
+if not TOKEN:
+    raise ValueError("❌ TELEGRAM_BOT_TOKEN не знайдено!")
+
 ADMIN_ID = int(os.getenv('ADMIN_ID', '1385645772'))
 
 GOALS = {
