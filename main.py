@@ -1,4 +1,3 @@
-import os
 import logging
 from telegram.ext import Updater, CommandHandler
 from config import TOKEN
@@ -18,10 +17,13 @@ def main():
     try:
         logger.info("🚀 Запуск бота...")
         
-        if not TOKEN:
-            logger.error("❌ Токен не знайдено!")
+        # Проста перевірка токена
+        if not TOKEN or TOKEN == "placeholder-token":
+            logger.error("❌ Токен не встановлено!")
             return
             
+        logger.info(f"✅ Токен отримано, довжина: {len(TOKEN)}")
+        
         # Створюємо Updater
         updater = Updater(TOKEN, use_context=True)
         dispatcher = updater.dispatcher
