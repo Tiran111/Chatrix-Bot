@@ -1,2 +1,3 @@
-python-telegram-bot==13.7 --force-reinstall
-psycopg2-binary==2.9.9
+python-telegram-bot==13.7
+--force-reinstall
+--no-cache-dir

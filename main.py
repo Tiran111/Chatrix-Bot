@@ -1,51 +1,48 @@
 import os
 import logging
-from telegram.ext import Updater, CommandHandler
 
-# Налаштування логування
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def start(update, context):
-    user = update.message.from_user
-    update.message.reply_text(f'Привіт {user.first_name}! Бот запущений! ✅')
 
 def main():
     try:
         logger.info("🚀 Запуск бота...")
         
-        # Отримуємо токен
+        # Перевірка токена
         TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-        
         if not TOKEN:
             logger.error("❌ Токен не знайдено!")
-            # Виведемо всі змінні для дебагу
-            for key, value in os.environ.items():
-                if 'BOT' in key or 'TOKEN' in key:
-                    logger.info(f"🔍 {key}: {value}")
+            # Виводимо всі змінні
+            for key in os.environ:
+                if 'TOKEN' in key or 'BOT' in key:
+                    logger.info(f"🔍 {key}: {os.environ[key][:10]}...")
             return
-            
-        logger.info(f"✅ Токен отримано, довжина: {len(TOKEN)}")
         
-        # Створюємо Updater
+        logger.info(f"✅ Токен отримано: {TOKEN[:10]}...")
+        
+        # Спроба імпорту після встановлення бібліотеки
+        try:
+            from telegram.ext import Updater, CommandHandler
+        except ImportError as e:
+            logger.error(f"❌ Помилка імпорту бібліотеки: {e}")
+            return
+        
+        # Створення бота
         updater = Updater(TOKEN, use_context=True)
         dispatcher = updater.dispatcher
         
-        # Додаємо обробники
+        def start(update, context):
+            update.message.reply_text('✅ Бот працює!')
+        
         dispatcher.add_handler(CommandHandler("start", start))
         
-        logger.info("✅ Бот запускається...")
-        
-        # Запускаємо бота
+        logger.info("🤖 Бот запускається...")
         updater.start_polling()
-        logger.info("🤖 Бот працює!")
+        logger.info("🎉 Бот успішно запущений!")
         updater.idle()
         
     except Exception as e:
-        logger.error(f"❌ Помилка запуску бота: {e}")
+        logger.error(f"💥 Критична помилка: {e}")
         import traceback
         traceback.print_exc()
 
