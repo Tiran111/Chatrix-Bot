@@ -17,9 +17,12 @@ async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
-    # Ініціалізуємо профіль
+    # Ініціалізуємо профіль - ВИПРАВЛЕНА ЛОГІКА
     user_states[user.id] = States.PROFILE_AGE
     user_profiles[user.id] = {}
+    
+    # Очищаємо попередні дані
+    context.user_data.pop('profile_data', None)
     
     await update.message.reply_text(
         "📝 *Створення профілю*\n\nВведіть ваш вік (18-100):",
@@ -37,8 +40,13 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
 
     if text == "🔙 Скасувати":
         user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)
         await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
         return
+
+    # Перевіряємо чи існує профіль для користувача
+    if user.id not in user_profiles:
+        user_profiles[user.id] = {}
 
     if state == States.PROFILE_AGE:
         try:
@@ -188,6 +196,7 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 user_states[user.id] = States.START
+                user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
                 await update.message.reply_text(
                     "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль готовий!",
                     reply_markup=get_main_menu(user.id)
@@ -197,6 +206,7 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
         user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
         photos_count = len(db.get_profile_photos(user.id))
         await update.message.reply_text(
             f"🎉 Профіль створено! Додано {photos_count} фото",

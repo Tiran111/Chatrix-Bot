@@ -105,9 +105,9 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_city'] = False
         return
     
-    # 5. Адмін-меню
+    # 5. Адмін-меню - ВИПРАВЛЕНА ЛОГІКА
     if user.id == ADMIN_ID:
-        if text in ["📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
+        if text in ["📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
             from handlers.admin import handle_admin_actions
             await handle_admin_actions(update, context)
             return
@@ -224,11 +224,11 @@ def main():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # Обробники
+        # Обробники команд
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", show_admin_panel))
         
-        # Обробники кнопок
+        # Обробники кнопок - ВИПРАВЛЕНІ ІМПОРТИ
         application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
         application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
         application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
@@ -240,6 +240,9 @@ def main():
         application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
         application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
         application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+        
+        # Адмін обробники
+        application.add_handler(MessageHandler(filters.Regex('^(📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
         
         # Фото та універсальний обробник
         application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -255,7 +258,7 @@ def main():
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")
 
-# Імпорт функцій після оголошення main()
+# Імпорт функцій після оголошення main() - ВИПРАВЛЕНІ ІМПОРТИ
 from handlers.admin import show_admin_panel, handle_admin_actions
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile

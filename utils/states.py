@@ -1,26 +1,21 @@
-from enum import Enum, auto
+from enum import Enum
 
 class States(Enum):
-    START = auto()
-    PROFILE_AGE = auto()
-    PROFILE_GENDER = auto()
-    PROFILE_SEEKING_GENDER = auto()
-    PROFILE_CITY = auto()
-    PROFILE_GOAL = auto()
-    PROFILE_BIO = auto()
-    ADD_MAIN_PHOTO = auto()
-    
-    # Адмін стани
-    ADMIN_SEARCH_USER = auto()
-    ADMIN_BAN_USER = auto()
-    ADMIN_UNBAN_USER = auto()
-    ADMIN_BAN_BY_ID = auto()
-    ADMIN_BAN_BY_MESSAGE = auto()
-    ADMIN_SEND_MESSAGE = auto()
-    BROADCAST = auto()
+    """РЎС‚Р°РЅРё РєРѕСЂРёСЃС‚СѓРІР°С‡Р°"""
+    START = 0
+    PROFILE_AGE = 1
+    PROFILE_GENDER = 2
+    PROFILE_SEEKING_GENDER = 3
+    PROFILE_CITY = 4
+    PROFILE_GOAL = 5
+    PROFILE_BIO = 6
+    ADD_MAIN_PHOTO = 7
+    BROADCAST = 8
+    ADMIN_SEARCH_USER = 9
+    ADMIN_BAN_USER = 10
+    ADMIN_UNBAN_USER = 11
+    ADMIN_SEND_MESSAGE = 12
 
-# Словник для зберігання станів користувачів
+# РЎР»РѕРІРЅРёРєРё РґР»СЏ Р·Р±РµСЂС–РіР°РЅРЅСЏ СЃС‚Р°РЅС–РІ С‚Р° РїСЂРѕС„С–Р»С–РІ
 user_states = {}
-
-# Словник для зберігання даних профілів під час створення
 user_profiles = {}
