@@ -6,7 +6,6 @@ from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
 import time
-import asyncio
 
 # Налаштування логування
 logging.basicConfig(
