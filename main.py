@@ -6,6 +6,9 @@ from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
 import time
+import os
+import threading
+import asyncio
 
 # Налаштування логування
 logging.basicConfig(
@@ -764,7 +767,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-def main():
+async def run_bot():
+    """Запуск Telegram бота"""
     logger.info("🚀 Запуск Chatrix Bot...")
     
     try:
@@ -809,7 +813,7 @@ def main():
 
         logger.info("✅ Бот запущено!")
         
-        application.run_polling(drop_pending_updates=True)
+        await application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")
@@ -818,7 +822,6 @@ def main():
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 
-import os
 from flask import Flask
 
 app = Flask(__name__)
@@ -827,7 +830,21 @@ app = Flask(__name__)
 def home():
     return "Bot is running!"
 
+def run_flask():
+    """Запуск Flask сервера"""
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+def main():
+    """Головна функція запуску"""
+    # Запускаємо Flask у окремому потоці
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Запускаємо бота в головному потоці
+    asyncio.run(run_bot())
+
 # Додай цей код в самий кінець файлу
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    main()
