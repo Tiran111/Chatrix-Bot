@@ -765,8 +765,12 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-async def run_bot():
-    """Запуск Telegram бота"""
+# Імпорт функцій
+from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
+from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
+
+def main():
+    """Головна функція запуску"""
     logger.info("🚀 Запуск Chatrix Bot...")
     
     try:
@@ -804,18 +808,11 @@ async def run_bot():
 
         logger.info("✅ Бот запущено!")
         
-        await application.run_polling(drop_pending_updates=True)
+        # Запуск бота
+        application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")
-
-# Імпорт функцій
-from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
-
-def main():
-    """Головна функція запуску"""
-    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
