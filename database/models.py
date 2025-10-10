@@ -20,11 +20,6 @@ class Database:
         """Ініціалізація бази даних з правильними стовпцями"""
         logger.info("🔄 Ініціалізація бази даних...")
 
-    def calculate_user_rating(self, user_id):
-        """Тимчасовий метод - заміни на реальну логіку"""
-        print(f"Calculating rating for user {user_id}")
-        return 5  # тимчасово повертаємо 5
-        
         # Таблиця користувачів - ОНОВЛЕНА СТРУКТУРА
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -335,13 +330,21 @@ class Database:
             return None, False
     
     def get_random_user(self, current_user_id, city=None):
-        """Отримання випадкового користувача для пошуку"""
+        """Отримання випадкового користувача для пошуку - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
             current_user = self.get_user(current_user_id)
             if not current_user:
+                logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
                 return None
             
+            # ДЕТАЛЬНА ВІДЛАДКА
+            logger.info(f"🔍 [SEARCH DEBUG] Пошук для: {current_user_id}")
+            logger.info(f"🔍 [SEARCH DEBUG] Поточний користувач: {current_user}")
+            
             seeking_gender = current_user.get('seeking_gender', 'all')
+            current_gender = current_user.get('gender')
+            
+            logger.info(f"🔍 [SEARCH DEBUG] Стать поточного: {current_gender}, шукає: {seeking_gender}")
             
             query = '''
                 SELECT u.* FROM users u
@@ -350,18 +353,32 @@ class Database:
             '''
             params = [current_user_id]
             
+            # ВИПРАВЛЕНА ЛОГІКА ПОШУКУ ЗА СТАТТЮ
             if seeking_gender != 'all':
                 query += ' AND u.gender = ?'
                 params.append(seeking_gender)
+                logger.info(f"🔍 [SEARCH DEBUG] Фільтр за статтю: {seeking_gender}")
+            else:
+                logger.info(f"🔍 [SEARCH DEBUG] Шукає всі статі")
             
             if city:
                 query += ' AND u.city LIKE ?'
                 params.append(f'%{city}%')
+                logger.info(f"🔍 [SEARCH DEBUG] Фільтр за містом: {city}")
             
             query += ' ORDER BY RANDOM() LIMIT 1'
             
+            logger.info(f"🔍 [SEARCH DEBUG] SQL: {query}")
+            logger.info(f"🔍 [SEARCH DEBUG] Параметри: {params}")
+            
             self.cursor.execute(query, params)
             user = self.cursor.fetchone()
+            
+            if user:
+                logger.info(f"🔍 [SEARCH DEBUG] Знайдено користувача: ID {user[1]}, стать {user[5]}")
+            else:
+                logger.info(f"🔍 [SEARCH DEBUG] Користувачів не знайдено")
+                
             return user
         except Exception as e:
             logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
@@ -829,6 +846,48 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка відладки: {e}")
             return False
+
+    def calculate_user_rating(self, user_id):
+        """Розрахунок рейтингу користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
+        try:
+            user = self.get_user(user_id)
+            if not user:
+                return 5.0
+            
+            base_rating = 5.0
+            bonus = 0.0
+            
+            # Бонус за наявність фото
+            if user.get('has_photo'):
+                bonus += 1.0
+            
+            # Бонус за заповнений профіль
+            if user.get('bio') and len(user.get('bio', '')) > 20:
+                bonus += 1.0
+            
+            # Бонус за кількість лайків
+            likes_count = user.get('likes_count', 0)
+            bonus += min(likes_count * 0.1, 3.0)  # Максимум +3 за лайки
+            
+            # Бонус за активність (остання активність)
+            if user.get('last_active'):
+                last_active = datetime.fromisoformat(user['last_active'].replace('Z', '+00:00'))
+                days_since_active = (datetime.now() - last_active).days
+                if days_since_active <= 7:  # Активність за останні 7 днів
+                    bonus += 0.5
+            
+            new_rating = min(base_rating + bonus, 10.0)
+            
+            # Оновлюємо рейтинг в базі
+            self.cursor.execute('UPDATE users SET rating = ? WHERE telegram_id = ?', (new_rating, user_id))
+            self.conn.commit()
+            
+            logger.info(f"✅ Рейтинг розраховано для {user_id}: {new_rating}")
+            return new_rating
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
+            return 5.0
 
 # Глобальний об'єкт бази даних
 db = Database()

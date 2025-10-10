@@ -4,15 +4,19 @@ from database.models import db
 from keyboards.main_menu import get_main_menu, get_search_navigation
 from utils.states import user_states, States
 from handlers.notifications import notification_system
+import logging
 
-# Допоміжна функція для форматування профілю - ОНОВЛЕНА ВЕРСІЯ З РЕЙТИНГОМ
+logger = logging.getLogger(__name__)
+
+# Допоміжна функція для форматування профілю
 def format_profile_text(user_data, title=""):
     """Форматування тексту профілю з рейтингом"""
-    if isinstance(user_data, dict):
-        # Якщо user_data - словник
-        gender_display = "👨 Чоловік" if user_data.get('gender') == 'male' else "👩 Жінка"
-        rating = user_data.get('rating', 5.0)
-        profile_text = f"""👤 {title}
+    try:
+        if isinstance(user_data, dict):
+            # Якщо user_data - словник
+            gender_display = "👨 Чоловік" if user_data.get('gender') == 'male' else "👩 Жінка"
+            rating = user_data.get('rating', 5.0)
+            profile_text = f"""👤 {title}
 
 *Ім'я:* {user_data.get('first_name', 'Не вказано')}
 *Вік:* {user_data.get('age', 'Не вказано')} років
@@ -23,22 +27,19 @@ def format_profile_text(user_data, title=""):
 
 *Про себе:*
 {user_data.get('bio', 'Не вказано')}"""
-    else:
-        # Якщо user_data - tuple (з бази даних)
-        # Отримуємо повну інформацію про користувача для правильного імені
-        from database.models import db
-        full_user_data = db.get_user_by_id(user_data[1])
-        
-        if full_user_data:
-            first_name = full_user_data.get('first_name', 'Користувач')
-            rating = full_user_data.get('rating', 5.0)
         else:
-            # Якщо не вдалося отримати повні дані, використовуємо те, що є
-            first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
-            rating = 5.0
-        
-        gender_display = "👨 Чоловік" if user_data[5] == 'male' else "👩 Жінка"
-        profile_text = f"""👤 {title}
+            # Якщо user_data - tuple (з бази даних)
+            full_user_data = db.get_user_by_id(user_data[1])
+            
+            if full_user_data:
+                first_name = full_user_data.get('first_name', 'Користувач')
+                rating = full_user_data.get('rating', 5.0)
+            else:
+                first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
+                rating = 5.0
+            
+            gender_display = "👨 Чоловік" if user_data[5] == 'male' else "👩 Жінка"
+            profile_text = f"""👤 {title}
 
 *Ім'я:* {first_name}
 *Вік:* {user_data[4]} років
@@ -49,8 +50,11 @@ def format_profile_text(user_data, title=""):
 
 *Про себе:*
 {user_data[9] if user_data[9] else "Не вказано"}"""
-    
-    return profile_text
+        
+        return profile_text
+    except Exception as e:
+        logger.error(f"❌ Помилка форматування профілю: {e}")
+        return f"❌ Помилка завантаження профілю"
 
 async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Пошук анкет"""
@@ -78,10 +82,15 @@ async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("🔍 Шукаю анкети...")
     
+    # ДЕТАЛЬНА ВІДЛАДКА ПОШУКУ
+    logger.info(f"🔍 [SEARCH] Пошук для користувача {user.id}")
+    
     # Знаходимо випадкову анкету
     random_user = db.get_random_user(user.id)
     
     if random_user:
+        logger.info(f"🔍 [SEARCH] Знайдено користувача: {random_user[1]}")
+        
         # Додаємо запис про перегляд профілю
         db.add_profile_view(user.id, random_user[1])
         
@@ -90,8 +99,13 @@ async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['current_index'] = 0
         context.user_data['search_type'] = 'random'
     else:
+        logger.info(f"🔍 [SEARCH] Анкет не знайдено для користувача {user.id}")
         await update.message.reply_text(
-            "😔 Наразі немає анкет для перегляду",
+            "😔 Наразі немає анкет для перегляду\n\n"
+            "💡 *Можливі причини:*\n"
+            "• Не залишилося анкет за вашими критеріями\n"
+            "• Всі анкети вже переглянуті\n"
+            "• Спробуйте змінити критерії пошуку",
             reply_markup=get_main_menu(user.id)
         )
 
@@ -197,6 +211,8 @@ async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_index = context.user_data.get('current_index', 0)
     search_type = context.user_data.get('search_type', 'random')
     
+    logger.info(f"🔍 [NEXT] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
+    
     if not search_users:
         await search_profiles(update, context)
         return
@@ -223,8 +239,16 @@ async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
             context.user_data['search_users'] = [random_user]
+            context.user_data['current_index'] = 0
         else:
-            await update.message.reply_text("😔 Більше немає анкет для перегляду", reply_markup=get_main_menu(user.id))
+            await update.message.reply_text(
+                "😔 Більше немає анкет для перегляду\n\n"
+                "💡 Спробуйте:\n"
+                "• Змінити критерії пошуку\n"
+                "• Пошукати за іншим містом\n"
+                "• Зачекати поки з'являться нові користувачі",
+                reply_markup=get_main_menu(user.id)
+            )
 
 async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка навігації"""
@@ -278,7 +302,7 @@ async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     matches = db.get_user_matches(user.id)
     
     if matches:
-        await update.message.reply_text("💌 *Ваші матчі:*", parse_mode='Markdown')
+        await update.message.reply_text(f"💌 *Ваші матчі ({len(matches)}):*", parse_mode='Markdown')
         for match in matches:
             profile_text = format_profile_text(match, "💕 МАТЧ!")
             main_photo = db.get_main_photo(match[1])
@@ -335,7 +359,7 @@ async def show_likes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка вибору топу з детальною відладкою"""
+    """Обробка вибору топу"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
@@ -349,24 +373,17 @@ async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "👨 Топ чоловіків":
         top_users = db.get_top_users_by_rating(limit=10, gender='male')
         title = "👨 Топ чоловіків"
-        print(f"🔍 [TOP] Запит топу чоловіків. Знайдено: {len(top_users)}")
+        logger.info(f"🔍 [TOP] Запит топу чоловіків. Знайдено: {len(top_users)}")
     elif text == "👩 Топ жінок":
         top_users = db.get_top_users_by_rating(limit=10, gender='female')
         title = "👩 Топ жінок"
-        print(f"🔍 [TOP] Запит топу жінок. Знайдено: {len(top_users)}")
+        logger.info(f"🔍 [TOP] Запит топу жінок. Знайдено: {len(top_users)}")
     else:  # "🏆 Загальний топ"
         top_users = db.get_top_users_by_rating(limit=10)
         title = "🏆 Загальний топ"
-        print(f"🔍 [TOP] Запит загального топу. Знайдено: {len(top_users)}")
-    
-    # ДЕТАЛЬНА ВІДЛАДКА
-    print(f"🔍 [TOP DEBUG] Всього знайдено користувачів: {len(top_users)}")
+        logger.info(f"🔍 [TOP] Запит загального топу. Знайдено: {len(top_users)}")
     
     if top_users:
-        # Відображаємо детальну інформацію про кожного користувача в консолі
-        for i, user_data in enumerate(top_users, 1):
-            print(f"🔍 [TOP USER {i}] ID: {user_data[1]}, Ім'я: {user_data[3]}, Рейтинг: {user_data[14] if len(user_data) > 14 else 'N/A'}, Фото: {user_data[10]}")
-        
         await update.message.reply_text(f"**{title}** 🏆\n\n*Знайдено анкет: {len(top_users)}*", parse_mode='Markdown')
         
         for i, user_data in enumerate(top_users, 1):
@@ -377,13 +394,10 @@ async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                 first_name = user_info.get('first_name', 'Користувач')
                 rating = user_info.get('rating', 5.0)
                 likes_count = user_info.get('likes_count', 0)
-                has_photo = user_info.get('has_photo', False)
-                print(f"🔍 [TOP DISPLAY {i}] {first_name} - Рейтинг: {rating}, Лайків: {likes_count}, Фото: {has_photo}")
             else:
                 first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
                 rating = user_data[14] if len(user_data) > 14 else 5.0
                 likes_count = user_data[12] if len(user_data) > 12 else 0
-                has_photo = user_data[10] if len(user_data) > 10 else False
             
             profile_text = f"""🏅 #{i} | ⭐ {rating:.1f} | ❤️ {likes_count} лайків
 
@@ -423,3 +437,31 @@ async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYP
             f"💡 *Порада:* Заповніть профіль повністю та додайте фото, щоб потрапити в топ!",
             reply_markup=get_main_menu(user.id)
         )
+
+# Додаткова функція для дебагу пошуку
+async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Дебаг пошуку для перевірки роботи"""
+    user = update.effective_user
+    logger.info(f"🔧 [DEBUG SEARCH] Для користувача {user.id}")
+    
+    # Отримуємо дані поточного користувача
+    current_user = db.get_user(user.id)
+    if current_user:
+        logger.info(f"🔧 [DEBUG] Поточний користувач: {current_user}")
+        logger.info(f"🔧 [DEBUG] Шукає стать: {current_user.get('seeking_gender')}")
+    
+    # Спроба знайти користувачів
+    random_user = db.get_random_user(user.id)
+    logger.info(f"🔧 [DEBUG] Знайдено випадкового користувача: {random_user is not None}")
+    
+    if random_user:
+        logger.info(f"🔧 [DEBUG] Знайдений користувач: ID {random_user[1]}, стать {random_user[5]}")
+    
+    await update.message.reply_text(
+        f"🔧 *Дебаг пошуку:*\n\n"
+        f"• Ваш ID: `{user.id}`\n"
+        f"• Шукаєте: {current_user.get('seeking_gender', 'всіх')}\n"
+        f"• Знайдено анкет: {'1' if random_user else '0'}\n"
+        f"• Статус: {'✅ Працює' if random_user else '❌ Проблема'}",
+        parse_mode='Markdown'
+    )
