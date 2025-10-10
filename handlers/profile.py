@@ -3,8 +3,12 @@ from telegram.ext import ContextTypes
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import States, user_states, user_profiles
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Початок створення профілю - ВИПРАВЛЕНО БАГ З ПЕРШОГО РАЗУ"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
@@ -13,26 +17,23 @@ async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
+    # Ініціалізуємо профіль
     user_states[user.id] = States.PROFILE_AGE
-    user_profiles[user.id] = {}  # Ініціалізуємо словник для профілю
+    user_profiles[user.id] = {}
+    
     await update.message.reply_text(
-        "📝 Створення профілю\n\nВведіть ваш вік:",
-        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
+        "📝 *Створення профілю*\n\nВведіть ваш вік (18-100):",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
+        parse_mode='Markdown'
     )
 
 async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка повідомлень під час створення профілю"""
     user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
     text = update.message.text
     state = user_states.get(user.id)
 
-    print(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
+    logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
 
     if text == "🔙 Скасувати":
         user_states[user.id] = States.START
@@ -45,12 +46,15 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
             if age < 18 or age > 100:
                 await update.message.reply_text("❌ Вік має бути від 18 до 100 років")
                 return
-            # Зберігаємо у user_profiles
+            
             user_profiles[user.id]['age'] = age
             user_states[user.id] = States.PROFILE_GENDER
+            
             keyboard = [[KeyboardButton("👨"), KeyboardButton("👩")], [KeyboardButton("🔙 Скасувати")]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text(f"✅ Вік: {age} років\n\nОберіть стать:", reply_markup=reply_markup)
+            await update.message.reply_text(
+                f"✅ Вік: {age} років\n\nОберіть стать:",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
         except ValueError:
             await update.message.reply_text("❌ Введіть коректний вік (число)")
 
@@ -76,10 +80,16 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
         if len(text) >= 2:
             user_profiles[user.id]['city'] = text
             user_states[user.id] = States.PROFILE_SEEKING_GENDER
-            # Клавіатура для вибору статі (з'являється тільки після введення міста)
-            keyboard = [[KeyboardButton("👩 Дівчину"), KeyboardButton("👨 Хлопця")], [KeyboardButton("👫 Всіх")], [KeyboardButton("🔙 Скасувати")]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text(f"✅ Місто: {text}\n\nКого шукаєте?", reply_markup=reply_markup)
+            
+            keyboard = [
+                [KeyboardButton("👩 Дівчину"), KeyboardButton("👨 Хлопця")],
+                [KeyboardButton("👫 Всіх")],
+                [KeyboardButton("🔙 Скасувати")]
+            ]
+            await update.message.reply_text(
+                f"✅ Місто: {text}\n\nКого шукаєте?",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
         else:
             await update.message.reply_text("❌ Назва міста закоротка. Спробуйте ще раз:")
 
@@ -87,63 +97,46 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
         if text == "👩 Дівчину":
             user_profiles[user.id]['seeking_gender'] = 'female'
             user_states[user.id] = States.PROFILE_GOAL
-            keyboard = [
-                [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
-                [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
-                [KeyboardButton("🔙 Скасувати")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text("✅ Шукаю: 👩 Дівчину\n\nОберіть ціль знайомства:", reply_markup=reply_markup)
         elif text == "👨 Хлопця":
             user_profiles[user.id]['seeking_gender'] = 'male'
             user_states[user.id] = States.PROFILE_GOAL
-            keyboard = [
-                [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
-                [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
-                [KeyboardButton("🔙 Скасувати")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text("✅ Шукаю: 👨 Хлопця\n\nОберіть ціль знайомства:", reply_markup=reply_markup)
         elif text == "👫 Всіх":
             user_profiles[user.id]['seeking_gender'] = 'all'
             user_states[user.id] = States.PROFILE_GOAL
-            keyboard = [
-                [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
-                [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
-                [KeyboardButton("🔙 Скасувати")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text("✅ Шукаю: 👫 Всіх\n\nОберіть ціль знайомства:", reply_markup=reply_markup)
         else:
             await update.message.reply_text("❌ Оберіть варіант з кнопок")
+            return
+        
+        # Показуємо вибір цілі
+        keyboard = [
+            [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
+            [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
+            [KeyboardButton("🔙 Скасувати")]
+        ]
+        seeking_text = {
+            'female': '👩 Дівчину',
+            'male': '👨 Хлопця', 
+            'all': '👫 Всіх'
+        }.get(user_profiles[user.id]['seeking_gender'])
+        
+        await update.message.reply_text(
+            f"✅ Шукаю: {seeking_text}\n\nОберіть ціль знайомства:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
 
     elif state == States.PROFILE_GOAL:
-        if text == "💞 Серйозні стосунки":
-            user_profiles[user.id]['goal'] = 'Серйозні стосунки'
+        goal_map = {
+            '💞 Серйозні стосунки': 'Серйозні стосунки',
+            '👥 Дружба': 'Дружба',
+            '🎉 Разові зустрічі': 'Разові зустрічі',
+            '🏃 Активний відпочинок': 'Активний відпочинок'
+        }
+        
+        if text in goal_map:
+            user_profiles[user.id]['goal'] = goal_map[text]
             user_states[user.id] = States.PROFILE_BIO
             await update.message.reply_text(
-                "✅ Ціль: 💞 Серйозні стосунки\n\nНапишіть про себе (мінімум 10 символів):",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        elif text == "👥 Дружба":
-            user_profiles[user.id]['goal'] = 'Дружба'
-            user_states[user.id] = States.PROFILE_BIO
-            await update.message.reply_text(
-                "✅ Ціль: 👥 Дружба\n\nНапишіть про себе (мінімум 10 символів):",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        elif text == "🎉 Разові зустрічі":
-            user_profiles[user.id]['goal'] = 'Разові зустрічі'
-            user_states[user.id] = States.PROFILE_BIO
-            await update.message.reply_text(
-                "✅ Ціль: 🎉 Разові зустрічі\n\nНапишіть про себе (мінімум 10 символів):",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        elif text == "🏃 Активний відпочинок":
-            user_profiles[user.id]['goal'] = 'Активний відпочинок'
-            user_states[user.id] = States.PROFILE_BIO
-            await update.message.reply_text(
-                "✅ Ціль: 🏃 Активний відпочинок\n\nНапишіть про себе (мінімум 10 символів):",
+                f"✅ Ціль: {text}\n\nНапишіть про себе (мінімум 10 символів):",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
             )
         else:
@@ -152,11 +145,8 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
     elif state == States.PROFILE_BIO:
         if len(text) >= 10:
             user_profiles[user.id]['bio'] = text
-        
-            print(f"💾 Зберігаємо профіль для {user.id}")
-            print(f"💾 Дані профілю: {user_profiles[user.id]}")
-        
-            # Зберігаємо профіль в базу даних
+            
+            # Зберігаємо профіль
             success = db.update_user_profile(
                 telegram_id=user.id,
                 age=user_profiles[user.id]['age'],
@@ -166,43 +156,27 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
                 goal=user_profiles[user.id]['goal'],
                 bio=user_profiles[user.id]['bio']
             )
-        
-            print(f"💾 Результат збереження: {success}")
-        
+            
             if success:
                 user_states[user.id] = States.ADD_MAIN_PHOTO
                 await update.message.reply_text(
-                    "📷 Тепер додайте фото для профілю (максимум 3 фото):",
-                    reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True)
+                    "🎉 *Профіль створено!*\n\nТепер додайте фото для профілю (максимум 3 фото):",
+                    reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
+                    parse_mode='Markdown'
                 )
             else:
                 await update.message.reply_text("❌ Помилка збереження профілю")
         else:
-            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів. Спробуйте ще раз:")
+            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
 
 async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка додавання фото"""
     user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
     
     if user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.photo:
         photo = update.message.photo[-1]
-        print(f"📷 Отримано фото для {user.id}")
         
-        # Перевіряємо кількість фото
-        current_photos = db.get_profile_photos(user.id)
-        if len(current_photos) >= 3:
-            user_states[user.id] = States.START
-            await update.message.reply_text(
-                "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль створено!",
-                reply_markup=get_main_menu(user.id)
-            )
-            return
-        
+        # Додаємо фото
         success = db.add_profile_photo(user.id, photo.file_id)
         
         if success:
@@ -215,7 +189,7 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 user_states[user.id] = States.START
                 await update.message.reply_text(
-                    "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль створено!",
+                    "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль готовий!",
                     reply_markup=get_main_menu(user.id)
                 )
         else:
@@ -233,14 +207,8 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📷 Будь ласка, надішліть фото:")
 
 async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показати профіль користувача"""
     user = update.effective_user
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
     user_data = db.get_user(user.id)
     
     if not user_data or not user_data.get('age'):
@@ -249,17 +217,15 @@ async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     photos = db.get_profile_photos(user.id)
     
-    # Відображення статі
+    # Форматування профілю
     gender_display = "👨 Чоловік" if user_data['gender'] == 'male' else "👩 Жінка"
     
-    # Відображення кого шукає
     seeking_display = {
         'female': '👩 Дівчину',
         'male': '👨 Хлопця',
         'all': '👫 Всіх'
     }.get(user_data.get('seeking_gender', 'all'), '👫 Всіх')
     
-    # Відображення цілі
     goal_display = {
         'Серйозні стосунки': '💞 Серйозні стосунки',
         'Дружба': '👥 Дружба',
@@ -280,28 +246,16 @@ async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {user_data['bio']}
 
 *Фото:* {len(photos)}/3
-❤️ *Лайків:* {user_data['likes_count']}"""
+❤️ *Лайків:* {user_data.get('likes_count', 0)}"""
     
-    # Відправляємо всі фото
+    # Відправляємо фото з описом
     if photos:
-        # Перше фото з описом профілю
         await update.message.reply_photo(
             photo=photos[0], 
             caption=profile_text,
             reply_markup=get_main_menu(user.id),
             parse_mode='Markdown'
         )
-        
-        # Решта фото без опису
-        for i, photo_id in enumerate(photos[1:], 2):
-            try:
-                await update.message.reply_photo(
-                    photo=photo_id, 
-                    caption=f"Фото {i} з {len(photos)}"
-                )
-            except Exception as e:
-                print(f"❌ Помилка завантаження фото: {e}")
-                await update.message.reply_text(f"📸 Фото {i} (помилка завантаження)")
     else:
         await update.message.reply_text(
             profile_text,
