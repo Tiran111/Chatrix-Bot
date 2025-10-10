@@ -1,39 +1,25 @@
 import os
 import logging
+from telegram.ext import Application, CommandHandler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+async def start_command(update, context):
+    user = update.effective_user
+    await update.message.reply_text(f"👋 Привіт, {user.first_name}! Бот працює на Render! 🚀")
+
 def main():
-    logger.info("🚀 Запуск бота...")
+    logger.info("🚀 Запуск бота на Render...")
     
-    # Список бібліотек для перевірки
-    libraries = ['telegram', 'aiohttp']
+    TOKEN = os.environ.get('BOT_TOKEN')
+    if not TOKEN:
+        logger.error("❌ BOT_TOKEN не знайдено!")
+        return
     
-    for lib in libraries:
-        try:
-            __import__(lib)
-            logger.info(f"✅ {lib} завантажено")
-        except ImportError as e:
-            logger.error(f"❌ {lib} не встановлено: {e}")
-            return
-    
-    # Якщо всі бібліотеки встановлені - запускаємо бота
     try:
-        from telegram import Update
-        from telegram.ext import Application, CommandHandler, ContextTypes
-        
-        async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            user = update.effective_user
-            await update.message.reply_text(f"👋 Привіт, {user.first_name}! Бот працює! 🚀")
-        
-        TOKEN = os.environ.get('BOT_TOKEN')
-        if not TOKEN:
-            logger.error("❌ BOT_TOKEN не знайдено!")
-            return
-        
         app = Application.builder().token(TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("start", start_command))
         
         logger.info("✅ Бот запускається...")
         app.run_polling(drop_pending_updates=True)
