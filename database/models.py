@@ -20,7 +20,7 @@ class Database:
         """Ініціалізація бази даних з правильними стовпцями"""
         logger.info("🔄 Ініціалізація бази даних...")
         
-        # Таблиця користувачів
+        # Таблиця користувачів - ОНОВЛЕНА СТРУКТУРА
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,42 +107,70 @@ class Database:
             
             logger.info(f"🔍 Наявні стовпці: {columns}")
             
-            # Додаємо відсутні стовпці
+            changes_made = False
+            
+            # Додаємо відсутні стовпці без DEFAULT значень спочатку
             if 'first_name' not in columns:
                 logger.info("➕ Додаємо стовпець first_name...")
                 self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
-                # Оновлюємо існуючі записи
-                self.cursor.execute('UPDATE users SET first_name = "Користувач" WHERE first_name IS NULL')
+                changes_made = True
             
             if 'last_active' not in columns:
                 logger.info("➕ Додаємо стовпець last_active...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+                self.cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
+                changes_made = True
             
             if 'rating' not in columns:
                 logger.info("➕ Додаємо стовпець rating...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN rating REAL DEFAULT 5.0')
+                self.cursor.execute('ALTER TABLE users ADD COLUMN rating REAL')
+                changes_made = True
             
             if 'daily_likes_count' not in columns:
                 logger.info("➕ Додаємо стовпець daily_likes_count...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN daily_likes_count INTEGER DEFAULT 0')
+                self.cursor.execute('ALTER TABLE users ADD COLUMN daily_likes_count INTEGER')
+                changes_made = True
             
             if 'last_like_date' not in columns:
                 logger.info("➕ Додаємо стовпець last_like_date...")
                 self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
+                changes_made = True
             
-            self.conn.commit()
-            logger.info("✅ Структура бази даних оновлена")
+            if changes_made:
+                self.conn.commit()
+                logger.info("✅ Структура бази даних оновлена")
+                
+                # Тепер оновлюємо значення для нових стовпців
+                self.initialize_new_columns()
+            else:
+                logger.info("✅ Структура бази даних вже актуальна")
             
         except Exception as e:
             logger.error(f"❌ Помилка оновлення структури БД: {e}")
-            # Створюємо нову базу даних якщо щось пішло не так
-            try:
-                os.remove(DATABASE_PATH)
-                self.init_db()
-                logger.info("✅ Створено нову базу даних")
-            except:
-                logger.error("❌ Не вдалося створити нову базу даних")
+            # Не видаляємо базу даних, просто продовжуємо роботу
     
+    def initialize_new_columns(self):
+        """Ініціалізація значень для нових стовпців"""
+        try:
+            logger.info("🔄 Ініціалізація значень для нових стовпців...")
+            
+            # Оновлюємо first_name для існуючих користувачів
+            self.cursor.execute('UPDATE users SET first_name = "Користувач" WHERE first_name IS NULL')
+            
+            # Оновлюємо last_active для існуючих користувачів
+            self.cursor.execute('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL')
+            
+            # Оновлюємо rating для існуючих користувачів
+            self.cursor.execute('UPDATE users SET rating = 5.0 WHERE rating IS NULL')
+            
+            # Оновлюємо daily_likes_count для існуючих користувачів
+            self.cursor.execute('UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL')
+            
+            self.conn.commit()
+            logger.info("✅ Значення для нових стовпців ініціалізовані")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
+
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:
@@ -156,7 +184,7 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка додавання користувача: {e}")
             return False
-    
+
     def get_user(self, telegram_id):
         """Отримання користувача за telegram_id"""
         try:
@@ -714,7 +742,7 @@ class Database:
                 if result_by_id:
                     return result_by_id
             except ValueError:
-                pass  # Якщо не число, шукаємо за іменем
+                pass  # Якщо не число, шукаємо за імені
             
             # Пошук за іменем або username
             self.cursor.execute('''
