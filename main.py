@@ -105,7 +105,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_city'] = False
         return
     
-    # 5. Адмін-меню - ВИПРАВЛЕНА ЛОГІКА
+    # 5. Адмін-меню
     if user.id == ADMIN_ID:
         if text in ["📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
             from handlers.admin import handle_admin_actions
@@ -203,7 +203,40 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_top_selection(update, context)
         return
     
-    # 9. Якщо нічого не підійшло
+    # 9. Обробка адмін-кнопок керування користувачами
+    if user.id == ADMIN_ID:
+        if text in ["📋 Список користувачів", "🔍 Пошук користувача", "🚫 Заблокувати", 
+                   "✅ Розблокувати", "📧 Надіслати повідомлення", "📋 Список заблокованих",
+                   "🚫 Заблокувати користувача", "✅ Розблокувати користувача"]:
+            from handlers.admin import handle_users_management_buttons
+            await handle_users_management_buttons(update, context)
+            return
+    
+    # 10. Обробка станів адміна
+    if user.id == ADMIN_ID:
+        state = user_states.get(user.id)
+        if state == States.ADMIN_SEARCH_USER:
+            from handlers.admin import handle_admin_search_user
+            await handle_admin_search_user(update, context)
+            return
+        elif state == States.ADMIN_BAN_USER:
+            from handlers.admin import handle_ban_user
+            await handle_ban_user(update, context)
+            return
+        elif state == States.ADMIN_UNBAN_USER:
+            from handlers.admin import handle_unban_user
+            await handle_unban_user(update, context)
+            return
+        elif state == States.BROADCAST:
+            from handlers.admin import handle_broadcast_message
+            await handle_broadcast_message(update, context)
+            return
+        elif state == States.ADMIN_SEND_MESSAGE:
+            from handlers.admin import handle_send_message
+            await handle_send_message(update, context)
+            return
+    
+    # 11. Якщо нічого не підійшло
     await update.message.reply_text(
         "❌ Команда не розпізнана. Оберіть пункт з меню:",
         reply_markup=get_main_menu(user.id)
@@ -228,7 +261,7 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", show_admin_panel))
         
-        # Обробники кнопок - ВИПРАВЛЕНІ ІМПОРТИ
+        # Обробники кнопок
         application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
         application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
         application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
@@ -244,6 +277,9 @@ def main():
         # Адмін обробники
         application.add_handler(MessageHandler(filters.Regex('^(📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
         
+        # Обробники керування користувачами
+        application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати|✅ Розблокувати|📧 Надіслати повідомлення|📋 Список заблокованих|🚫 Заблокувати користувача|✅ Розблокувати користувача)$'), handle_users_management_buttons))
+        
         # Фото та універсальний обробник
         application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
@@ -258,8 +294,12 @@ def main():
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")
 
-# Імпорт функцій після оголошення main() - ВИПРАВЛЕНІ ІМПОРТИ
-from handlers.admin import show_admin_panel, handle_admin_actions
+# Імпорт функцій після оголошення main()
+from handlers.admin import (
+    show_admin_panel, handle_admin_actions, handle_users_management_buttons,
+    handle_admin_search_user, handle_ban_user, handle_unban_user,
+    handle_broadcast_message, handle_send_message
+)
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 
