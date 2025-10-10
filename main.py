@@ -6,8 +6,6 @@ from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
 import time
-import os
-import threading
 import asyncio
 
 # Налаштування логування
@@ -797,13 +795,6 @@ async def run_bot():
         # Обробники керування користувачами
         application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати|✅ Розблокувати|📧 Надіслати повідомлення|📋 Список заблокованих|🚫 Заблокувати користувача|✅ Розблокувати користувача|🔙 Назад до адмін-панелі)$'), handle_users_management_buttons))
         
-        # Обробники станів адміна
-        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_admin_search_user), group=1)
-        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_ban_user), group=2)
-        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_unban_user), group=3)
-        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_broadcast_message), group=4)
-        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, handle_send_message), group=5)
-        
         # Фото та універсальний обробник
         application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
@@ -818,33 +809,13 @@ async def run_bot():
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")
 
-# Імпорт функцій після оголошення main()
+# Імпорт функцій
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 
-from flask import Flask
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    """Запуск Flask сервера"""
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
 def main():
     """Головна функція запуску"""
-    # Запускаємо Flask у окремому потоці
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Запускаємо бота в головному потоці
     asyncio.run(run_bot())
 
-# Додай цей код в самий кінець файлу
 if __name__ == "__main__":
     main()
