@@ -15,7 +15,7 @@ class Database:
         self.cursor = self.conn.cursor()
         self.init_db()
         self.update_database_structure()
-    
+
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
         logger.info("🔄 Ініціалізація бази даних...")
@@ -146,7 +146,7 @@ class Database:
             
         except Exception as e:
             logger.error(f"❌ Помилка оновлення структури БД: {e}")
-    
+
     def initialize_new_columns(self):
         """Ініціалізація значень для нових стовпців"""
         try:
@@ -877,7 +877,7 @@ class Database:
                         bonus += 0.5
                 except Exception as e:
                     logger.error(f"❌ Помилка обробки last_active: {e}")
-            
+
             new_rating = min(base_rating + bonus, 10.0)
             
             # Оновлюємо рейтинг в базі
