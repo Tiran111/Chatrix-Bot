@@ -7,6 +7,8 @@ from config import TOKEN, ADMIN_ID
 import logging
 import time
 import os
+from flask import Flask
+import threading
 
 # Налаштування логування
 logging.basicConfig(
@@ -14,6 +16,26 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Flask app для Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 Chatrix Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+@app.route('/healthz')
+def healthz():
+    return "OK", 200
+
+def run_flask():
+    """Запуск Flask сервера для Render"""
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -598,6 +620,12 @@ def main():
     logger.info("🚀 Запуск Chatrix Bot...")
     
     try:
+        # Запускаємо Flask у окремому потоці для Render
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        logger.info("🌐 Flask сервер запущено для Render")
+        
+        # Запускаємо телеграм бота
         application = Application.builder().token(TOKEN).build()
         
         # Обробники команд
@@ -630,7 +658,7 @@ def main():
 
         logger.info("✅ Бот запущено!")
         
-        # Простий запуск для Replit
+        # Запускаємо polling
         application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
