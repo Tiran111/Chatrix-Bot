@@ -720,8 +720,17 @@ class Database:
             return False
 
     def ban_user(self, telegram_id):
-        """Заблокувати користувача"""
+        """Заблокувати користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
+            # Спочатку перевіряємо чи користувач існує
+            self.cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
+            user = self.cursor.fetchone()
+            
+            if not user:
+                logger.error(f"❌ Користувача {telegram_id} не знайдено для блокування")
+                return False
+            
+            # Блокуємо користувача
             self.cursor.execute('UPDATE users SET is_banned = TRUE WHERE telegram_id = ?', (telegram_id,))
             self.conn.commit()
             logger.info(f"✅ Користувач {telegram_id} заблокований")
@@ -731,8 +740,17 @@ class Database:
             return False
 
     def unban_user(self, telegram_id):
-        """Розблокувати користувача"""
+        """Розблокувати користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
+            # Спочатку перевіряємо чи користувач існує
+            self.cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
+            user = self.cursor.fetchone()
+            
+            if not user:
+                logger.error(f"❌ Користувача {telegram_id} не знайдено для розблокування")
+                return False
+            
+            # Розблоковуємо користувача
             self.cursor.execute('UPDATE users SET is_banned = FALSE WHERE telegram_id = ?', (telegram_id,))
             self.conn.commit()
             logger.info(f"✅ Користувач {telegram_id} розблокований")

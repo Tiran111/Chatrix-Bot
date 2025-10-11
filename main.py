@@ -81,6 +81,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка кнопки зв'язку з адміном"""
+    user = update.effective_user
+    
+    contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
+
+📧 Для зв'язку з адміністратором напишіть повідомлення з описом вашої проблеми або питання.
+
+🆔 Ваш ID: `{user.id}`
+👤 Ваше ім'я: {user.first_name}
+
+💬 *Напишіть ваше повідомлення:*"""
+
+    # Встановлюємо стан очікування повідомлення для адміна
+    user_states[user.id] = States.CONTACT_ADMIN
+    
+    await update.message.reply_text(
+        contact_text,
+        reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
+        parse_mode='Markdown'
+    )
+
+async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка повідомлення для адміна"""
+    user = update.effective_user
+    
+    if user_states.get(user.id) != States.CONTACT_ADMIN:
+        return
+    
+    message_text = update.message.text
+    
+    if message_text == "🔙 Скасувати":
+        user_states[user.id] = States.START
+        await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+        return
+    
+    # Відправляємо повідомлення адміну
+    try:
+        admin_message = f"""📩 *Нове повідомлення від користувача*
+
+👤 *Користувач:* {user.first_name}
+🆔 *ID:* `{user.id}`
+📝 *Повідомлення:*
+{message_text}"""
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_message,
+            parse_mode='Markdown'
+        )
+        
+        # Підтверджуємо користувачу
+        await update.message.reply_text(
+            "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
+            reply_markup=get_main_menu(user.id)
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка відправки повідомлення адміну: {e}")
+        await update.message.reply_text(
+            "❌ Помилка відправки повідомлення. Спробуйте пізніше.",
+            reply_markup=get_main_menu(user.id)
+        )
+    
+    user_states[user.id] = States.START
+
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати адмін панель"""
     user = update.effective_user
@@ -516,7 +582,12 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_broadcast_message(update, context)
             return
     
-    # 6. Адмін-меню
+    # 6. Обробка зв'язку з адміном
+    if state == States.CONTACT_ADMIN:
+        await handle_contact_message(update, context)
+        return
+    
+    # 7. Адмін-меню
     if user.id == ADMIN_ID:
         if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
             await handle_admin_actions(update, context)
@@ -536,7 +607,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await show_admin_panel(update, context)
             return
     
-    # 7. Обробка команд меню
+    # 8. Обробка команд меню
     if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
         from handlers.profile import start_profile_creation
         await start_profile_creation(update, context)
@@ -591,12 +662,17 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_top_selection(update, context)
         return
     
-    # 8. Команда дебагу
+    # 9. Обробка кнопки зв'язку з адміном
+    elif text == "👨‍💼 Зв'язок з адміном":
+        await contact_admin(update, context)
+        return
+    
+    # 10. Команда дебагу
     elif text == "/debug_search":
         await debug_search(update, context)
         return
     
-    # 9. Якщо нічого не підійшло
+    # 11. Якщо нічого не підійшло
     await update.message.reply_text(
         "❌ Команда не розпізнана. Оберіть пункт з меню:",
         reply_markup=get_main_menu(user.id)
@@ -644,6 +720,7 @@ def main():
         application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
         application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
         application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+        application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
         
         # Адмін обробники
         application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
