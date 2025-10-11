@@ -1,9 +1,14 @@
 language = "python3"
 run = "python main.py"
+entrypoint = "main.py"
 
 [env]
 BOT_TOKEN = "7823150178:AAElnZEQB9nSwJxAZ_J75Mg-1UVaVWQcr-s"
 ADMIN_ID = "1385645772"
+REPLIT = "true"
 
 [packages]
 python-telegram-bot = "20.7"
+
+[deployment]
+run = ["python", "main.py"]
