@@ -6,6 +6,7 @@ from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
 import time
+import os
 
 # Налаштування логування
 logging.basicConfig(
@@ -13,6 +14,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Додаємо порт для Replit
+PORT = int(os.environ.get('PORT', 8443))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -575,6 +579,45 @@ async def start_send_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
     )
 
+async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для дебагу пошуку"""
+    user = update.effective_user
+    logger.info(f"🔧 [DEBUG COMMAND] Для користувача {user.id}")
+    
+    # Отримуємо дані поточного користувача
+    current_user = db.get_user(user.id)
+    
+    if not current_user:
+        await update.message.reply_text("❌ Вашого профілю не знайдено")
+        return
+    
+    # Дебаг пошуку
+    seeking_gender = current_user.get('seeking_gender', 'all')
+    current_gender = current_user.get('gender')
+    
+    # Спроба знайти користувачів
+    random_user = db.get_random_user(user.id)
+    
+    debug_info = f"""🔧 *ДЕБАГ ПОШУКУ*
+
+👤 *Ваш профіль:*
+• ID: `{user.id}`
+• Стать: {current_gender}
+• Шукаєте: {seeking_gender}
+
+🔍 *Результат пошуку:*
+• Знайдено анкет: {'1' if random_user else '0'}
+• Статус: {'✅ УСПІШНО' if random_user else '❌ НЕ ЗНАЙДЕНО'}
+
+📊 *База даних:*
+• Всього користувачів: {db.get_users_count()}
+• Активних анкет: {db.get_statistics()[2]}"""
+
+    if random_user:
+        debug_info += f"\n\n👤 *Знайдений користувач:*\n• ID: `{random_user[1]}`\n• Стать: {random_user[5]}"
+    
+    await update.message.reply_text(debug_info, parse_mode='Markdown')
+
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Універсальний обробник повідомлень"""
     user = update.effective_user
@@ -749,7 +792,12 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_top_selection(update, context)
         return
     
-    # 10. Якщо нічого не підійшло
+    # 10. Команда дебагу
+    elif text == "/debug_search":
+        await debug_search(update, context)
+        return
+    
+    # 11. Якщо нічого не підійшло
     await update.message.reply_text(
         "❌ Команда не розпізнана. Оберіть пункт з меню:",
         reply_markup=get_main_menu(user.id)
@@ -778,6 +826,7 @@ def main():
         # Обробники команд
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", show_admin_panel))
+        application.add_handler(CommandHandler("debug_search", debug_search))  # Додаємо команду для дебагу
         
         # Обробники кнопок
         application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
@@ -807,8 +856,18 @@ def main():
 
         logger.info("✅ Бот запущено!")
         
-        # Запуск бота
-        application.run_polling(drop_pending_updates=True)
+        # Запуск бота на Replit
+        if 'REPLIT' in os.environ or 'REPL_ID' in os.environ:
+            # Webhook для Replit
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=TOKEN,
+                webhook_url=f"https://{os.environ.get('REPL_SLUG', 'your-repl')}.{os.environ.get('REPL_OWNER', 'your-username')}.repl.co/{TOKEN}"
+            )
+        else:
+            # Звичайний polling для локального запуску
+            application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         logger.error(f"❌ Помилка запуску: {e}")

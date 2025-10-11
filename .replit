@@ -1,0 +1,9 @@
+language = "python3"
+run = "python main.py"
+
+[env]
+BOT_TOKEN = "7823150178:AAElnZEQB9nSwJxAZ_J75Mg-1UVaVWQcr-s"
+ADMIN_ID = "1385645772"
+
+[packages]
+python-telegram-bot = "20.7"
