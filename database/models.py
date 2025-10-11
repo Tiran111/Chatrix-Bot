@@ -14,7 +14,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         self.init_db()
-        self.update_database_structure()  # Додаємо оновлення структури
+        self.update_database_structure()
     
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
@@ -146,7 +146,6 @@ class Database:
             
         except Exception as e:
             logger.error(f"❌ Помилка оновлення структури БД: {e}")
-            # Не видаляємо базу даних, просто продовжуємо роботу
     
     def initialize_new_columns(self):
         """Ініціалізація значень для нових стовпців"""
@@ -871,10 +870,13 @@ class Database:
             
             # Бонус за активність (остання активність)
             if user.get('last_active'):
-                last_active = datetime.fromisoformat(user['last_active'].replace('Z', '+00:00'))
-                days_since_active = (datetime.now() - last_active).days
-                if days_since_active <= 7:  # Активність за останні 7 днів
-                    bonus += 0.5
+                try:
+                    last_active = datetime.fromisoformat(user['last_active'].replace('Z', '+00:00'))
+                    days_since_active = (datetime.now() - last_active).days
+                    if days_since_active <= 7:  # Активність за останні 7 днів
+                        bonus += 0.5
+                except Exception as e:
+                    logger.error(f"❌ Помилка обробки last_active: {e}")
             
             new_rating = min(base_rating + bonus, 10.0)
             
