@@ -104,10 +104,12 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка повідомлення для адміна"""
+    """Обробка повідомлення для адміна - ВИПРАВЛЕНА ВЕРСІЯ"""
     user = update.effective_user
     
+    # Перевіряємо стан
     if user_states.get(user.id) != States.CONTACT_ADMIN:
+        logger.info(f"❌ Неправильний стан для обробки повідомлення адміну: {user_states.get(user.id)}")
         return
     
     message_text = update.message.text
@@ -145,7 +147,9 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=get_main_menu(user.id)
         )
     
+    # ВАЖЛИВО: Скидаємо стан після обробки
     user_states[user.id] = States.START
+    logger.info(f"✅ Стан скинуто для користувача {user.id}")
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати адмін панель"""
@@ -519,7 +523,7 @@ async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(debug_info, parse_mode='Markdown')
 
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Універсальний обробник повідомлень"""
+    """Універсальний обробник повідомлень - ВИПРАВЛЕНА ВЕРСІЯ"""
     user = update.effective_user
     text = update.message.text if update.message.text else ""
     state = user_states.get(user.id, States.START)
@@ -534,20 +538,26 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
         return
 
-    # 2. Перевіряємо додавання фото
+    # 2. Обробка зв'язку з адміном - ВИПРАВЛЕНО (першочергово)
+    if state == States.CONTACT_ADMIN:
+        logger.info(f"🔧 Обробка повідомлення для адміна від {user.id}")
+        await handle_contact_message(update, context)
+        return
+
+    # 3. Перевіряємо додавання фото
     if state == States.ADD_MAIN_PHOTO:
         from handlers.profile import handle_main_photo
         await handle_main_photo(update, context)
         return
 
-    # 3. Перевіряємо стани профілю
+    # 4. Перевіряємо стани профілю
     if state in [States.PROFILE_AGE, States.PROFILE_GENDER, States.PROFILE_SEEKING_GENDER, 
                  States.PROFILE_CITY, States.PROFILE_GOAL, States.PROFILE_BIO]:
         from handlers.profile import handle_profile_message
         await handle_profile_message(update, context)
         return
     
-    # 4. Перевіряємо введення міста для пошуку
+    # 5. Перевіряємо введення міста для пошуку
     if context.user_data.get('waiting_for_city'):
         from handlers.search import show_user_profile
         
@@ -569,7 +579,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for_city'] = False
         return
     
-    # 5. Обробка станів адміна
+    # 6. Обробка станів адміна
     if user.id == ADMIN_ID:
         state = user_states.get(user.id)
         if state == States.ADMIN_BAN_USER:
@@ -581,11 +591,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == States.BROADCAST:
             await handle_broadcast_message(update, context)
             return
-    
-    # 6. Обробка зв'язку з адміном
-    if state == States.CONTACT_ADMIN:
-        await handle_contact_message(update, context)
-        return
     
     # 7. Адмін-меню
     if user.id == ADMIN_ID:
@@ -725,6 +730,12 @@ def main():
         # Адмін обробники
         application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
         application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+        
+        # ВАЖЛИВО: Додаємо обробники для станів блокування
+        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати$'), start_ban_user))
+        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати$'), start_unban_user))
+        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати користувача$'), start_ban_user))
+        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати користувача$'), start_unban_user))
         
         # Фото та універсальний обробник
         application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
