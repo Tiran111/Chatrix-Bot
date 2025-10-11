@@ -329,7 +329,7 @@ class Database:
             return None, False
     
     def get_random_user(self, current_user_id, city=None):
-        """Отримання випадкового користувача для пошуку - ВИПРАВЛЕНА ВЕРСІЯ"""
+        """Отримання випадкового користувача для пошуку - ВИПРАВЛЕНА ЛОГІКА СТАТІ"""
         try:
             current_user = self.get_user(current_user_id)
             if not current_user:
@@ -354,11 +354,13 @@ class Database:
             
             # ВИПРАВЛЕНА ЛОГІКА ПОШУКУ ЗА СТАТТЮ
             if seeking_gender != 'all':
+                # Якщо користувач шукає конкретну стать - показуємо тільки цю стать
                 query += ' AND u.gender = ?'
                 params.append(seeking_gender)
                 logger.info(f"🔍 [SEARCH DEBUG] Фільтр за статтю: {seeking_gender}")
             else:
-                logger.info(f"🔍 [SEARCH DEBUG] Шукає всі статі")
+                # Якщо користувач шукає всі статі - не додаємо фільтр за статтю
+                logger.info(f"🔍 [SEARCH DEBUG] Шукає всі статі - без фільтру")
             
             if city:
                 query += ' AND u.city LIKE ?'
@@ -374,7 +376,7 @@ class Database:
             user = self.cursor.fetchone()
             
             if user:
-                logger.info(f"🔍 [SEARCH DEBUG] Знайдено користувача: ID {user[1]}, стать {user[5]}")
+                logger.info(f"🔍 [SEARCH DEBUG] Знайдено користувача: ID {user[1]}, стать {user[5]}, ім'я {user[3]}")
             else:
                 logger.info(f"🔍 [SEARCH DEBUG] Користувачів не знайдено")
                 
@@ -384,7 +386,7 @@ class Database:
             return None
     
     def get_users_by_city(self, city, current_user_id):
-        """Отримання користувачів за містом"""
+        """Отримання користувачів за містом - ВИПРАВЛЕНА ЛОГІКА СТАТІ"""
         try:
             logger.info(f"🔍 Пошук у місті: '{city}' для користувача {current_user_id}")
             
@@ -406,6 +408,7 @@ class Database:
             '''
             params = [current_user_id, f'%{clean_city}%']
             
+            # ВИПРАВЛЕНА ЛОГІКА ПОШУКУ ЗА СТАТТЮ
             if seeking_gender != 'all':
                 query += ' AND u.gender = ?'
                 params.append(seeking_gender)
@@ -418,6 +421,11 @@ class Database:
             self.cursor.execute(query, params)
             users = self.cursor.fetchall()
             logger.info(f"🔍 Знайдено користувачів: {len(users)}")
+            
+            # Логуємо знайдених користувачів для дебагу
+            for user in users:
+                logger.info(f"🔍 Знайдений: ID {user[1]}, стать {user[5]}, ім'я {user[3]}")
+                
             return users
         except Exception as e:
             logger.error(f"❌ Помилка пошуку за містом: {e}")
