@@ -852,7 +852,7 @@ def main():
     # Запускаємо Flask сервер в головному потоці
     run_flask_server()
 
-# Імпорт функцій
+# Імпорт функцій (в кінці файлу для уникнення циклічних імпортів)
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 
