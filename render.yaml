@@ -8,17 +8,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: RUN_TYPE
-        value: web
 
   - type: worker
     name: chatrix-bot
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: python bot.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: RUN_TYPE
-        value: bot
