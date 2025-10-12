@@ -9,6 +9,7 @@ import os
 import asyncio
 from flask import Flask
 import threading
+import time
 
 # Налаштування логування
 logging.basicConfig(
@@ -806,7 +807,7 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
 
-async def run_bot():
+async def run_telegram_bot():
     """Запуск Telegram бота"""
     try:
         logger.info("🚀 Запуск Telegram Bot...")
@@ -822,7 +823,11 @@ async def run_bot():
         # Запускаємо polling
         await application.run_polling(
             drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
+            allowed_updates=Update.ALL_TYPES,
+            pool_timeout=10,
+            read_timeout=10,
+            write_timeout=10,
+            connect_timeout=10
         )
         
     except Exception as e:
@@ -834,18 +839,18 @@ def run_flask_server():
     """Запуск Flask сервера"""
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"🌐 Запуск Flask сервера на порті {port}...")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 def main():
     """Головна функція запуску"""
     logger.info("🚀 Запуск Chatrix Bot...")
     
-    # Запускаємо Flask сервер в окремому потоці
-    flask_thread = threading.Thread(target=run_flask_server, daemon=True)
-    flask_thread.start()
+    # Запускаємо Telegram бота в окремому потоці
+    bot_thread = threading.Thread(target=lambda: asyncio.run(run_telegram_bot()), daemon=True)
+    bot_thread.start()
     
-    # Запускаємо Telegram бота в головному потоці
-    asyncio.run(run_bot())
+    # Запускаємо Flask сервер в головному потоці
+    run_flask_server()
 
 # Імпорт функцій
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
