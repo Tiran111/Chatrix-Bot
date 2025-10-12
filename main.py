@@ -10,9 +10,7 @@ import os
 import asyncio
 from flask import Flask
 import threading
-import signal
-import sys
-from gunicorn.app.base import BaseApplication
+import requests
 
 # Налаштування логування
 logging.basicConfig(
@@ -23,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 # Вимкнути логи Flask/Werkzeug
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
-logging.getLogger('gunicorn').setLevel(logging.WARNING)
 
 # Flask app для Render
 app = Flask(__name__)
@@ -44,38 +41,28 @@ def healthz():
 def ping():
     return "pong", 200
 
-class GunicornApp(BaseApplication):
-    def __init__(self, app, options=None):
-        self.options = options or {}
-        self.application = app
-        super().__init__()
-
-    def load_config(self):
-        config = {key: value for key, value in self.options.items()
-                 if key in self.cfg.settings and value is not None}
-        for key, value in config.items():
-            self.cfg.set(key.lower(), value)
-
-    def load(self):
-        return self.application
-
 def run_flask():
-    """Запуск Flask сервера для Render з Gunicorn"""
+    """Запуск Flask сервера для Render"""
     port = int(os.environ.get("PORT", 10000))
-    
-    # Налаштування для Gunicorn
-    options = {
-        'bind': f'0.0.0.0:{port}',
-        'workers': 1,
-        'worker_class': 'sync',
-        'timeout': 60,
-        'preload_app': True,
-        'accesslog': '-',
-        'errorlog': '-',
-        'loglevel': 'info'
-    }
-    
-    GunicornApp(app, options).run()
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+def keep_alive():
+    """Keep-alive для уникнення засинання на Render"""
+    while True:
+        try:
+            # Отримуємо URL з змінних оточення Render
+            render_url = os.environ.get('RENDER_EXTERNAL_URL')
+            if render_url:
+                response = requests.get(f"{render_url}/health", timeout=10)
+                logger.info(f"🫀 Keep-alive ping: {response.status_code}")
+            else:
+                # Якщо не на Render, просто чекаємо
+                logger.info("🔧 Keep-alive: очікування...")
+        except Exception as e:
+            logger.error(f"❌ Keep-alive помилка: {e}")
+        
+        # Чекаємо 4 хвилини між ping
+        time.sleep(240)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -821,6 +808,11 @@ async def main():
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
         logger.info("🌐 Flask сервер запущено для Render")
+        
+        # Запускаємо keep-alive в окремому потоці
+        keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+        keep_alive_thread.start()
+        logger.info("🫀 Keep-alive запущено")
         
         # Створюємо application з налаштуваннями для стабільності
         application = Application.builder().token(TOKEN).build()
