@@ -12,6 +12,7 @@ from flask import Flask
 import threading
 import signal
 import sys
+from gunicorn.app.base import BaseApplication
 
 # Налаштування логування
 logging.basicConfig(
@@ -19,6 +20,10 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Вимкнути логи Flask/Werkzeug
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+logging.getLogger('gunicorn').setLevel(logging.WARNING)
 
 # Flask app для Render
 app = Flask(__name__)
@@ -35,24 +40,42 @@ def health():
 def healthz():
     return "OK", 200
 
+@app.route('/ping')
+def ping():
+    return "pong", 200
+
+class GunicornApp(BaseApplication):
+    def __init__(self, app, options=None):
+        self.options = options or {}
+        self.application = app
+        super().__init__()
+
+    def load_config(self):
+        config = {key: value for key, value in self.options.items()
+                 if key in self.cfg.settings and value is not None}
+        for key, value in config.items():
+            self.cfg.set(key.lower(), value)
+
+    def load(self):
+        return self.application
+
 def run_flask():
-    """Запуск Flask сервера для Render"""
+    """Запуск Flask сервера для Render з Gunicorn"""
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-# Глобальна змінна для управління станом бота
-bot_running = True
-
-def signal_handler(signum, frame):
-    """Обробник сигналів для коректного завершення"""
-    global bot_running
-    logger.info("🛑 Отримано сигнал завершення...")
-    bot_running = False
-    sys.exit(0)
-
-# Реєстрація обробників сигналів
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Налаштування для Gunicorn
+    options = {
+        'bind': f'0.0.0.0:{port}',
+        'workers': 1,
+        'worker_class': 'sync',
+        'timeout': 60,
+        'preload_app': True,
+        'accesslog': '-',
+        'errorlog': '-',
+        'loglevel': 'info'
+    }
+    
+    GunicornApp(app, options).run()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -129,7 +152,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка повідомлення для адміна - ВИПРАВЛЕНА ВЕРСІЯ"""
+    """Обробка повідомлення для адміна"""
     try:
         user = update.effective_user
         
@@ -173,7 +196,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
                 reply_markup=get_main_menu(user.id)
             )
         
-        # ВАЖЛИВО: Скидаємо стан після обробки
+        # Скидаємо стан після обробки
         user_states[user.id] = States.START
         logger.info(f"✅ Стан скинуто для користувача {user.id}")
         
@@ -611,7 +634,7 @@ async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Універсальний обробник повідомлень - ВИПРАВЛЕНА ВЕРСІЯ"""
+    """Універсальний обробник повідомлень"""
     try:
         user = update.effective_user
         text = update.message.text if update.message.text else ""
@@ -627,7 +650,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
             return
 
-        # 2. Обробка зв'язку з адміном - ВИПРАВЛЕНО (першочергово)
+        # 2. Обробка зв'язку з адміном
         if state == States.CONTACT_ADMIN:
             logger.info(f"🔧 Обробка повідомлення для адміна від {user.id}")
             await handle_contact_message(update, context)
@@ -843,7 +866,11 @@ async def main():
         await application.run_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES,
-            close_loop=False
+            close_loop=False,
+            pool_timeout=10,
+            read_timeout=10,
+            write_timeout=10,
+            connect_timeout=10
         )
         
     except Exception as e:
