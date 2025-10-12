@@ -5,12 +5,10 @@ from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 import logging
-import time
 import os
 import asyncio
 from flask import Flask
 import threading
-import requests
 
 # Налаштування логування
 logging.basicConfig(
@@ -40,29 +38,6 @@ def healthz():
 @app.route('/ping')
 def ping():
     return "pong", 200
-
-def run_flask():
-    """Запуск Flask сервера для Render"""
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-def keep_alive():
-    """Keep-alive для уникнення засинання на Render"""
-    while True:
-        try:
-            # Отримуємо URL з змінних оточення Render
-            render_url = os.environ.get('RENDER_EXTERNAL_URL')
-            if render_url:
-                response = requests.get(f"{render_url}/health", timeout=10)
-                logger.info(f"🫀 Keep-alive ping: {response.status_code}")
-            else:
-                # Якщо не на Render, просто чекаємо
-                logger.info("🔧 Keep-alive: очікування...")
-        except Exception as e:
-            logger.error(f"❌ Keep-alive помилка: {e}")
-        
-        # Чекаємо 4 хвилини між ping
-        time.sleep(240)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -795,85 +770,86 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
+def setup_handlers(application):
+    """Налаштування обробників"""
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("debug_search", debug_search))
+    
+    # Обробники кнопок
+    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
+    application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda u, c: u.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(u.effective_user.id))))
+    application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    
+    # Адмін обробники
+    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
+    application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    
+    # Обробники для станів блокування
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати$'), start_ban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати$'), start_unban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати користувача$'), start_ban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати користувача$'), start_unban_user))
+    
+    # Фото та універсальний обробник
+    application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+
+    # Обробник помилок
+    application.add_error_handler(error_handler)
+
+async def run_bot():
+    """Запуск Telegram бота"""
+    try:
+        logger.info("🚀 Запуск Telegram Bot...")
+        
+        # Створюємо application
+        application = Application.builder().token(TOKEN).build()
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        
+        logger.info("✅ Бот запущено!")
+        
+        # Запускаємо polling
+        await application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка запуску бота: {e}")
+    finally:
+        logger.info("🛑 Бот завершує роботу...")
+
+def run_flask_server():
+    """Запуск Flask сервера"""
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"🌐 Запуск Flask сервера на порті {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+def main():
+    """Головна функція запуску"""
+    logger.info("🚀 Запуск Chatrix Bot...")
+    
+    # Запускаємо Flask сервер в окремому потоці
+    flask_thread = threading.Thread(target=run_flask_server, daemon=True)
+    flask_thread.start()
+    
+    # Запускаємо Telegram бота в головному потоці
+    asyncio.run(run_bot())
+
 # Імпорт функцій
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 
-async def main():
-    """Головна асинхронна функція запуску"""
-    logger.info("🚀 Запуск Chatrix Bot...")
-    
-    try:
-        # Запускаємо Flask у окремому потоці для Render
-        flask_thread = threading.Thread(target=run_flask, daemon=True)
-        flask_thread.start()
-        logger.info("🌐 Flask сервер запущено для Render")
-        
-        # Запускаємо keep-alive в окремому потоці
-        keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-        keep_alive_thread.start()
-        logger.info("🫀 Keep-alive запущено")
-        
-        # Створюємо application з налаштуваннями для стабільності
-        application = Application.builder().token(TOKEN).build()
-        
-        # Додаємо обробники
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("debug_search", debug_search))
-        
-        # Обробники кнопок
-        application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-        application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-        application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-        application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-        application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
-        application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-        application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda u, c: u.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(u.effective_user.id))))
-        application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-        application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-        application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-        application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-        application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-        
-        # Адмін обробники
-        application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
-        application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-        
-        # Обробники для станів блокування
-        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати$'), start_ban_user))
-        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати$'), start_unban_user))
-        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати користувача$'), start_ban_user))
-        application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати користувача$'), start_unban_user))
-        
-        # Фото та універсальний обробник
-        application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
-
-        # Обробник помилок
-        application.add_error_handler(error_handler)
-
-        logger.info("✅ Бот запущено!")
-        
-        # Запускаємо polling з параметрами для стабільності
-        await application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False,
-            pool_timeout=10,
-            read_timeout=10,
-            write_timeout=10,
-            connect_timeout=10
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Критична помилка запуску: {e}")
-    finally:
-        logger.info("🛑 Бот завершує роботу...")
-        # Закриваємо з'єднання з базою даних
-        if hasattr(db, 'conn'):
-            db.conn.close()
-            logger.info("✅ З'єднання з базою даних закрито")
-
 if __name__ == "__main__":
-    # Запускаємо асинхронну функцію
-    asyncio.run(main())
+    main()
