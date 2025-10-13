@@ -6,11 +6,8 @@ from keyboards.search_keyboards import *
 from utils.states import user_states, States
 from config import ADMIN_ID
 import logging
-import random
 
 logger = logging.getLogger(__name__)
-
-def search_profiles(update: Update, context: CallbackContext):
 
 # Допоміжна функція для форматування профілю
 def format_profile_text(user_data, title=""):
@@ -60,7 +57,7 @@ def format_profile_text(user_data, title=""):
         logger.error(f"❌ Помилка форматування профілю: {e}")
         return f"❌ Помилка завантаження профілю"
 
-async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_profiles(update: Update, context: CallbackContext):
     """Пошук анкет"""
     user = update.effective_user
     
@@ -113,7 +110,7 @@ async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu(user.id)
         )
 
-async def search_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_by_city(update: Update, context: CallbackContext):
     """Пошук за містом"""
     user = update.effective_user
     
@@ -132,7 +129,7 @@ async def search_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['waiting_for_city'] = True
     await update.message.reply_text("🏙️ Введіть назву міста для пошуку:")
 
-async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, user_data, title=""):
+async def show_user_profile(update: Update, context: CallbackContext, user_data, title=""):
     """Показати профіль користувача"""
     user = update.effective_user
     
@@ -167,7 +164,7 @@ async def show_user_profile(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             parse_mode='Markdown'
         )
 
-async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_like(update: Update, context: CallbackContext):
     """Обробка лайку з перевіркою обмежень"""
     user = update.effective_user
     
@@ -185,6 +182,7 @@ async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if success:
             # Відправляємо сповіщення про лайк
+            from handlers.notifications import notification_system
             await notification_system.notify_new_like(context, user.id, current_profile_id)
             
             # Перевіряємо чи це взаємний лайк (матч)
@@ -201,7 +199,7 @@ async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Не знайдено профіль для лайку")
 
-async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_next_profile(update: Update, context: CallbackContext):
     """Наступний профіль"""
     user = update.effective_user
     
@@ -254,7 +252,7 @@ async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_menu(user.id)
             )
 
-async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_navigation(update: Update, context: CallbackContext):
     """Обробка навігації"""
     user = update.effective_user
     
@@ -273,7 +271,7 @@ async def handle_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🔙 Скасувати":
         await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
 
-async def show_top_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_top_users(update: Update, context: CallbackContext):
     """Показати вибір топу"""
     user = update.effective_user
     
@@ -293,7 +291,7 @@ async def show_top_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
-async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_matches(update: Update, context: CallbackContext):
     """Мої матчі"""
     user = update.effective_user
     
@@ -322,7 +320,7 @@ async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("😔 У вас ще немає матчів", reply_markup=get_main_menu(user.id))
 
-async def show_likes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_likes(update: Update, context: CallbackContext):
     """Показати хто мене лайкнув"""
     user = update.effective_user
     
@@ -362,7 +360,7 @@ async def show_likes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_top_selection(update: Update, context: CallbackContext):
     """Обробка вибору топу"""
     user = update.effective_user
     
@@ -443,7 +441,7 @@ async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
 # Додаткова функція для дебагу пошуку
-async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def debug_search(update: Update, context: CallbackContext):
     """Дебаг пошуку для перевірки роботи"""
     user = update.effective_user
     logger.info(f"🔧 [DEBUG SEARCH] Для користувача {user.id}")
@@ -461,11 +459,4 @@ async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if random_user:
         logger.info(f"🔧 [DEBUG] Знайдений користувач: ID {random_user[1]}, стать {random_user[5]}")
     
-    await update.message.reply_text(
-        f"🔧 *Дебаг пошуку:*\n\n"
-        f"• Ваш ID: `{user.id}`\n"
-        f"• Шукаєте: {current_user.get('seeking_gender', 'всіх')}\n"
-        f"• Знайдено анкет: {'1' if random_user else '0'}\n"
-        f"• Статус: {'✅ Працює' if random_user else '❌ Проблема'}",
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(f"🔧 Дебаг завершено. Перевірте логи для деталей.")

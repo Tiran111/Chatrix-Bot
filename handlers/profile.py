@@ -1,15 +1,15 @@
 from telegram.ext import CallbackContext
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from keyboards.profile_keyboards import *
-from utils.states import user_states, States
+from utils.states import user_states, States, user_profiles
 from config import ADMIN_ID
 import logging
 
 logger = logging.getLogger(__name__)
 
-def start_profile_creation(update: Update, context: CallbackContext):
+async def start_profile_creation(update: Update, context: CallbackContext):
     """Початок створення профілю - ВИПРАВЛЕНО БАГ З ПЕРШОГО РАЗУ"""
     user = update.effective_user
     
@@ -32,7 +32,7 @@ def start_profile_creation(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_profile_message(update: Update, context: CallbackContext):
     """Обробка повідомлень під час створення профілю"""
     user = update.effective_user
     text = update.message.text
@@ -179,7 +179,7 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
         else:
             await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
 
-async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_main_photo(update: Update, context: CallbackContext):
     """Обробка додавання фото"""
     user = update.effective_user
     
@@ -218,7 +218,7 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:
         await update.message.reply_text("📷 Будь ласка, надішліть фото:")
 
-async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_my_profile(update: Update, context: CallbackContext):
     """Показати профіль користувача"""
     user = update.effective_user
     user_data = db.get_user(user.id)
