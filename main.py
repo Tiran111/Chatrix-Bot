@@ -36,7 +36,6 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальна змінна для бота
 application = None
-bot_initialized = False
 
 @app.route('/')
 def home():
@@ -105,10 +104,10 @@ def set_webhook_route():
 
 async def set_webhook():
     """Асинхронна функція для встановлення webhook"""
-    global application, bot_initialized
+    global application
     
     try:
-        if not bot_initialized:
+        if application is None:
             await initialize_bot()
         
         logger.info(f"🌐 Встановлення webhook на URL: {WEBHOOK_URL}")
@@ -424,7 +423,6 @@ def setup_handlers(application):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
-    # Видалено debug_search команду
     application.add_handler(CommandHandler("start", start))
     
     # Обробники кнопок
@@ -455,7 +453,7 @@ def setup_handlers(application):
 
 async def initialize_bot():
     """Ініціалізація бота"""
-    global application, bot_initialized
+    global application
     
     try:
         logger.info("🚀 Початок ініціалізації бота...")
@@ -472,19 +470,22 @@ async def initialize_bot():
         await application.start()
         logger.info("✅ Бот ініціалізовано та запущено")
         
-        bot_initialized = True
-        
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
         raise
 
-async def main():
-    """Головна асинхронна функція"""
-    await initialize_bot()
+def run_bot():
+    """Запуск бота в окремому потоці"""
+    try:
+        asyncio.run(initialize_bot())
+    except Exception as e:
+        logger.error(f"❌ Помилка запуску бота: {e}")
 
 if __name__ == "__main__":
-    # Запускаємо ініціалізацію бота
-    asyncio.run(main())
+    # Запускаємо бота в окремому потоці
+    import threading
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     
     # Запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
