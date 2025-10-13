@@ -1,6 +1,6 @@
 import logging
 import os
-import asyncio
+import time
 from flask import Flask
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
@@ -425,13 +425,17 @@ def start_telegram_bot():
         
         logger.info("✅ Бот запущено!")
         
-        # Запускаємо polling БЕЗ idle()
+        # Запускаємо polling
         updater.start_polling()
         
-        # Простий нескінченний цикл
-        import time
-        while True:
-            time.sleep(10)
+        # Запускаємо Flask сервер в окремому потоці
+        from threading import Thread
+        flask_thread = Thread(target=start_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
+        
+        # Безкінечний цикл для бота
+        updater.idle()
             
     except Exception as e:
         logger.error(f"❌ Помилка запуску бота: {e}")
@@ -445,14 +449,14 @@ def start_flask():
 def main():
     """Головна функція запуску"""
     # Визначаємо тип запуску через змінну оточення
-    run_type = os.environ.get("RUN_TYPE", "web")
+    run_type = os.environ.get("RUN_TYPE", "bot")
     
-    if run_type == "bot":
-        logger.info("🚀 Запуск Telegram Bot...")
-        start_telegram_bot()
-    else:
+    if run_type == "web":
         logger.info("🚀 Запуск Flask Web Server...")
         start_flask()
+    else:
+        logger.info("🚀 Запуск Telegram Bot...")
+        start_telegram_bot()
 
 if __name__ == "__main__":
     main()
