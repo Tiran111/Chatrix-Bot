@@ -445,16 +445,6 @@ def start_flask():
 
 def main():
     """Головна функція запуску"""
-    
-    # Примусове скидання стану бота перед запуском
-    import requests
-    try:
-        reset_url = f"https://api.telegram.org/bot{TOKEN}/deleteWebhook?drop_pending_updates=true"
-        response = requests.get(reset_url)
-        logger.info(f"🔄 Скидання стану бота: {response.status_code}")
-    except Exception as e:
-        logger.warning(f"⚠️ Не вдалося скинути стан: {e}")
-    
     logger.info("🚀 Запуск Telegram Bot...")
     
     try:
