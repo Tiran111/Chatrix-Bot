@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -35,6 +36,18 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальна змінна для бота
 application = None
+event_loop = None
+
+def run_async_tasks():
+    """Запуск асинхронних завдань в окремому потоці"""
+    global event_loop
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    event_loop.run_forever()
+
+# Запускаємо event loop в окремому потоці при старті
+async_thread = threading.Thread(target=run_async_tasks, daemon=True)
+async_thread.start()
 
 @app.route('/')
 def home():
@@ -71,8 +84,11 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Додаємо оновлення в чергу
-        application.update_queue.put_nowait(update)
+        # Додаємо оновлення в чергу через event loop
+        asyncio.run_coroutine_threadsafe(
+            process_update(update), 
+            event_loop
+        )
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
@@ -81,11 +97,20 @@ def webhook():
         logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
         return "Error", 500
 
+async def process_update(update):
+    """Обробка оновлення"""
+    try:
+        await application.process_update(update)
+        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
+
 @app.route('/set_webhook')
 def set_webhook_route():
     """Встановити webhook через HTTP запит"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
+        # Використовуємо окремий event loop для цього запиту
         result = asyncio.run(set_webhook())
         logger.info(f"✅ Результат встановлення webhook: {result}")
         return result
