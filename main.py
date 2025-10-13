@@ -180,39 +180,252 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Помилка в /start: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-# ... (інші обробники залишаються незмінними)
-
-async def initialize_bot():
-    """Ініціалізація бота"""
-    global application, bot_initialized
-    
+async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка кнопки зв'язку з адміном"""
     try:
-        logger.info("🚀 Початок ініціалізації бота...")
+        user = update.effective_user
+        logger.info(f"👨‍💼 Користувач {user.first_name} запитує зв'язок з адміном")
         
-        # Створюємо бота
-        application = Application.builder().token(TOKEN).build()
-        logger.info("✅ Application створено")
+        contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
+
+📧 Для зв'язку з адміністратором напишіть повідомлення з описом вашої проблеми або питання.
+
+🆔 Ваш ID: `{user.id}`
+👤 Ваше ім'я: {user.first_name}
+
+💬 *Напишіть ваше повідомлення:*"""
+
+        # Встановлюємо стан очікування повідомлення для адміна
+        user_states[user.id] = States.CONTACT_ADMIN
         
-        # Налаштовуємо обробники
-        setup_handlers(application)
-        
-        # Ініціалізуємо бота
-        await application.initialize()
-        await application.start()
-        logger.info("✅ Бот ініціалізовано та запущено")
-        
-        bot_initialized = True
+        await update.message.reply_text(
+            contact_text,
+            reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
+            parse_mode='Markdown'
+        )
+        logger.info(f"✅ Запит на зв'язок з адміном оброблено для {user.first_name}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
-        raise
+        logger.error(f"❌ Помилка в contact_admin: {e}", exc_info=True)
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+
+async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка повідомлення для адміна"""
+    try:
+        user = update.effective_user
+        logger.info(f"📩 Обробка повідомлення для адміна від {user.first_name}")
+        
+        # Перевіряємо стан
+        if user_states.get(user.id) != States.CONTACT_ADMIN:
+            logger.info(f"❌ Неправильний стан для обробки повідомлення адміну: {user_states.get(user.id)}")
+            return
+        
+        message_text = update.message.text
+        
+        if message_text == "🔙 Скасувати":
+            user_states[user.id] = States.START
+            await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+            logger.info(f"✅ Скасовано зв'язок з адміном для {user.first_name}")
+            return
+        
+        # Відправляємо повідомлення адміну
+        try:
+            admin_message = f"""📩 *Нове повідомлення від користувача*
+
+👤 *Користувач:* {user.first_name}
+🆔 *ID:* `{user.id}`
+📝 *Повідомлення:*
+{message_text}"""
+
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_message,
+                parse_mode='Markdown'
+            )
+            
+            # Підтверджуємо користувачу
+            await update.message.reply_text(
+                "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
+                reply_markup=get_main_menu(user.id)
+            )
+            logger.info(f"✅ Повідомлення від {user.first_name} відправлено адміну")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки повідомлення адміну: {e}")
+            await update.message.reply_text(
+                "❌ Помилка відправки повідомлення. Спробуйте пізніше.",
+                reply_markup=get_main_menu(user.id)
+            )
+        
+        # Скидаємо стан після обробки
+        user_states[user.id] = States.START
+        logger.info(f"✅ Стан скинуто для користувача {user.id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в handle_contact_message: {e}", exc_info=True)
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+
+async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Універсальний обробник повідомлень"""
+    try:
+        user = update.effective_user
+        text = update.message.text if update.message.text else ""
+        state = user_states.get(user.id, States.START)
+
+        # Скасування
+        if text == "🔙 Скасувати" or text == "🔙 Завершити":
+            user_states[user.id] = States.START
+            context.user_data.pop('waiting_for_city', None)
+            context.user_data.pop('contact_admin', None)
+            await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
+            logger.info(f"✅ Дію скасовано для {user.first_name}")
+            return
+
+        # Зв'язок з адміном
+        if state == States.CONTACT_ADMIN:
+            await handle_contact_message(update, context)
+            return
+
+        # Додавання фото
+        if state == States.ADD_MAIN_PHOTO:
+            await handle_main_photo(update, context)
+            return
+
+        # Стани профілю
+        if state in [States.PROFILE_AGE, States.PROFILE_GENDER, States.PROFILE_SEEKING_GENDER, 
+                     States.PROFILE_CITY, States.PROFILE_GOAL, States.PROFILE_BIO]:
+            await handle_profile_message(update, context)
+            return
+        
+        # Пошук по місту
+        if context.user_data.get('waiting_for_city'):
+            clean_city = text.replace('🏙️ ', '').strip()
+            users = db.get_users_by_city(clean_city, user.id)
+            
+            if users:
+                user_data = users[0]
+                await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
+                context.user_data['search_users'] = users
+                context.user_data['current_index'] = 0
+                context.user_data['search_type'] = 'city'
+            else:
+                await update.message.reply_text(
+                    f"😔 Не знайдено анкет у місті {clean_city}",
+                    reply_markup=get_main_menu(user.id)
+                )
+            
+            context.user_data['waiting_for_city'] = False
+            return
+        
+        # Обробка станів адміна
+        if user.id == ADMIN_ID:
+            admin_state = user_states.get(user.id)
+            if admin_state == States.ADMIN_BAN_USER:
+                await handle_ban_user(update, context)
+                return
+            elif admin_state == States.ADMIN_UNBAN_USER:
+                await handle_unban_user(update, context)
+                return
+            elif admin_state == States.BROADCAST:
+                await handle_broadcast_message(update, context)
+                return
+        
+        # Адмін-меню
+        if user.id == ADMIN_ID:
+            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
+                await handle_admin_actions(update, context)
+                return
+            
+            # Обробка адмін-кнопок керування користувачами
+            if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
+                if text == "📋 Список користувачів":
+                    await show_users_list(update, context)
+                elif text == "🚫 Заблокувати користувача":
+                    await start_ban_user(update, context)
+                elif text == "✅ Розблокувати користувача":
+                    await start_unban_user(update, context)
+                elif text == "📋 Список заблокованих":
+                    await show_banned_users(update, context)
+                elif text == "🔙 Назад до адмін-панелі":
+                    await show_admin_panel(update, context)
+                return
+        
+        # Обробка команд меню
+        if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
+            await start_profile_creation(update, context)
+            return
+        
+        elif text == "👤 Мій профіль":
+            await show_my_profile(update, context)
+            return
+        
+        elif text == "💕 Пошук анкет":
+            await search_profiles(update, context)
+            return
+        
+        elif text == "🏙️ По місту":
+            await search_by_city(update, context)
+            return
+        
+        elif text == "❤️ Лайк":
+            await handle_like(update, context)
+            return
+        
+        elif text == "➡️ Далі":
+            await show_next_profile(update, context)
+            return
+        
+        elif text == "🔙 Меню":
+            await update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(user.id))
+            return
+        
+        elif text == "🏆 Топ":
+            await show_top_users(update, context)
+            return
+        
+        elif text == "💌 Мої матчі":
+            await show_matches(update, context)
+            return
+        
+        elif text == "❤️ Хто мене лайкнув":
+            await show_likes(update, context)
+            return
+        
+        elif text in ["👨 Топ чоловіків", "👩 Топ жінок", "🏆 Загальний топ"]:
+            await handle_top_selection(update, context)
+            return
+        
+        # Обробка кнопки зв'язку з адміном
+        elif text == "👨‍💼 Зв'язок з адміном":
+            await contact_admin(update, context)
+            return
+        
+        # Якщо нічого не підійшло
+        await update.message.reply_text(
+            "❌ Команда не розпізнана. Оберіть пункт з меню:",
+            reply_markup=get_main_menu(user.id)
+        )
+        logger.info(f"❌ Нерозпізнана команда від {user.first_name}: {text}")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в universal_handler: {e}", exc_info=True)
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник помилок"""
+    try:
+        logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
+        if update and update.effective_user:
+            await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+    except Exception as e:
+        logger.error(f"❌ Помилка в error_handler: {e}")
 
 def setup_handlers(application):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
+    # Видалено debug_search команду
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("debug_search", debug_search))
     
     # Обробники кнопок
     application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
@@ -239,6 +452,31 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
+
+async def initialize_bot():
+    """Ініціалізація бота"""
+    global application, bot_initialized
+    
+    try:
+        logger.info("🚀 Початок ініціалізації бота...")
+        
+        # Створюємо бота
+        application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        
+        # Ініціалізуємо бота
+        await application.initialize()
+        await application.start()
+        logger.info("✅ Бот ініціалізовано та запущено")
+        
+        bot_initialized = True
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+        raise
 
 async def main():
     """Головна асинхронна функція"""
