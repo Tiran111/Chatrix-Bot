@@ -4,6 +4,7 @@ import time
 from flask import Flask
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
+from telegram.error import Conflict
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
@@ -368,6 +369,13 @@ def universal_handler(update: Update, context: CallbackContext):
 def error_handler(update: Update, context: CallbackContext):
     """Обробник помилок"""
     try:
+        if isinstance(context.error, Conflict):
+            logger.warning("⚠️ Конфлікт: запущено кілька екземплярів бота. Зупиняємо поточний...")
+            # Зупиняємо цей екземпляр
+            context.dispatcher.stop()
+            context.dispatcher.updater.stop()
+            return
+        
         logger.error(f"❌ Помилка: {context.error}", exc_info=True)
         if update and update.effective_user:
             update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
@@ -414,31 +422,45 @@ def setup_handlers(updater):
 
 def start_telegram_bot():
     """Запуск Telegram бота"""
-    try:
-        logger.info("🚀 Запуск Telegram Bot...")
-        
-        # Створюємо updater
-        updater = Updater(TOKEN, use_context=True)
-        
-        # Налаштовуємо обробники
-        setup_handlers(updater)
-        
-        logger.info("✅ Бот запущено!")
-        
-        # Запускаємо polling
-        updater.start_polling()
-        
-        # Запускаємо Flask сервер в окремому потоці
-        from threading import Thread
-        flask_thread = Thread(target=start_flask)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # Безкінечний цикл для бота
-        updater.idle()
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            logger.info(f"🚀 Запуск Telegram Bot... (спроба {retry_count + 1})")
             
-    except Exception as e:
-        logger.error(f"❌ Помилка запуску бота: {e}")
+            # Створюємо updater
+            updater = Updater(TOKEN, use_context=True)
+            
+            # Налаштовуємо обробники
+            setup_handlers(updater)
+            
+            logger.info("✅ Бот запущено!")
+            
+            # Запускаємо polling
+            updater.start_polling()
+            
+            # Запускаємо Flask сервер в окремому потоці
+            from threading import Thread
+            flask_thread = Thread(target=start_flask)
+            flask_thread.daemon = True
+            flask_thread.start()
+            
+            # Безкінечний цикл для бота
+            updater.idle()
+            break
+            
+        except Conflict as e:
+            retry_count += 1
+            logger.warning(f"⚠️ Конфлікт при запуску бота. Спробуємо знову через 10 секунд... ({retry_count}/{max_retries})")
+            if retry_count < max_retries:
+                time.sleep(10)
+            else:
+                logger.error("❌ Досягнуто максимальну кількість спроб. Зупиняємо бота.")
+                break
+        except Exception as e:
+            logger.error(f"❌ Помилка запуску бота: {e}")
+            break
 
 def start_flask():
     """Запуск Flask сервера"""
