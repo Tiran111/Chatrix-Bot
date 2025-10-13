@@ -489,13 +489,29 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
 
+def initialize_bot():
+    """Ініціалізація бота при старті"""
+    global application
+    try:
+        # Створюємо бота
+        application = Application.builder().token(TOKEN).build()
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        
+        # Встановлюємо webhook
+        application.bot.set_webhook(WEBHOOK_URL)
+        
+        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
+        logger.info("🤖 Бот готовий до роботи!")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка ініціалізації бота: {e}")
+
 if __name__ == "__main__":
+    # Ініціалізуємо бота при старті
+    initialize_bot()
+    
     # Запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
-    
-    # При старті автоматично встановлюємо webhook
-    @app.before_first_request
-    def setup_webhook():
-        set_webhook()
-    
     app.run(host='0.0.0.0', port=PORT, debug=False)
