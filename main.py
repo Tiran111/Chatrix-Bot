@@ -4,7 +4,6 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from telegram.error import Conflict, TelegramError
 
 # Імпорт ваших модулів
 from database.models import db
@@ -15,7 +14,7 @@ from config import TOKEN, ADMIN_ID
 # Імпорт обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
-from handlers.admin import show_admin_panel, handle_admin_actions, show_users_management, show_users_list, start_broadcast, update_database, show_ban_management, show_banned_users, show_detailed_stats, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
+from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
 
 # Налаштування логування
 logging.basicConfig(
@@ -72,8 +71,8 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Обробляємо оновлення
-        asyncio.create_task(process_update(update))
+        # Додаємо оновлення в чергу
+        application.update_queue.put_nowait(update)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
@@ -81,14 +80,6 @@ def webhook():
     except Exception as e:
         logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
         return "Error", 500
-
-async def process_update(update):
-    """Обробка оновлення"""
-    try:
-        await application.process_update(update)
-        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки оновлення: {e}")
 
 @app.route('/set_webhook')
 def set_webhook_route():
@@ -107,9 +98,17 @@ async def set_webhook():
     global application
     
     try:
-        if application is None:
-            await initialize_bot()
+        logger.info("🚀 Початок ініціалізації бота...")
         
+        # Створюємо бота
+        application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        logger.info("✅ Обробники налаштовано")
+        
+        # Встановлюємо webhook
         logger.info(f"🌐 Встановлення webhook на URL: {WEBHOOK_URL}")
         await application.bot.set_webhook(WEBHOOK_URL)
         
@@ -123,7 +122,7 @@ async def set_webhook():
         return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
         
     except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,7 +215,6 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         
         # Перевіряємо стан
         if user_states.get(user.id) != States.CONTACT_ADMIN:
-            logger.info(f"❌ Неправильний стан для обробки повідомлення адміну: {user_states.get(user.id)}")
             return
         
         message_text = update.message.text
@@ -224,45 +222,32 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         if message_text == "🔙 Скасувати":
             user_states[user.id] = States.START
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
-            logger.info(f"✅ Скасовано зв'язок з адміном для {user.first_name}")
             return
         
         # Відправляємо повідомлення адміну
-        try:
-            admin_message = f"""📩 *Нове повідомлення від користувача*
+        admin_message = f"""📩 *Нове повідомлення від користувача*
 
 👤 *Користувач:* {user.first_name}
 🆔 *ID:* `{user.id}`
 📝 *Повідомлення:*
 {message_text}"""
 
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=admin_message,
-                parse_mode='Markdown'
-            )
-            
-            # Підтверджуємо користувачу
-            await update.message.reply_text(
-                "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
-                reply_markup=get_main_menu(user.id)
-            )
-            logger.info(f"✅ Повідомлення від {user.first_name} відправлено адміну")
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка відправки повідомлення адміну: {e}")
-            await update.message.reply_text(
-                "❌ Помилка відправки повідомлення. Спробуйте пізніше.",
-                reply_markup=get_main_menu(user.id)
-            )
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_message,
+            parse_mode='Markdown'
+        )
         
-        # Скидаємо стан після обробки
+        await update.message.reply_text(
+            "✅ Ваше повідомлення відправлено адміністратору!",
+            reply_markup=get_main_menu(user.id)
+        )
+        
         user_states[user.id] = States.START
-        logger.info(f"✅ Стан скинуто для користувача {user.id}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка в handle_contact_message: {e}", exc_info=True)
-        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        logger.error(f"❌ Помилка в handle_contact_message: {e}")
+        await update.message.reply_text("❌ Сталася помилка.")
 
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Універсальний обробник повідомлень"""
@@ -272,12 +257,9 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = user_states.get(user.id, States.START)
 
         # Скасування
-        if text == "🔙 Скасувати" or text == "🔙 Завершити":
+        if text == "🔙 Скасувати":
             user_states[user.id] = States.START
-            context.user_data.pop('waiting_for_city', None)
-            context.user_data.pop('contact_admin', None)
-            await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
-            logger.info(f"✅ Дію скасовано для {user.first_name}")
+            await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
 
         # Зв'язок з адміном
@@ -331,11 +313,10 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Адмін-меню
         if user.id == ADMIN_ID:
-            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
+            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 await handle_admin_actions(update, context)
                 return
             
-            # Обробка адмін-кнопок керування користувачами
             if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
                 if text == "📋 Список користувачів":
                     await show_users_list(update, context)
@@ -394,7 +375,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_top_selection(update, context)
             return
         
-        # Обробка кнопки зв'язку з адміном
         elif text == "👨‍💼 Зв'язок з адміном":
             await contact_admin(update, context)
             return
@@ -404,18 +384,17 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
             reply_markup=get_main_menu(user.id)
         )
-        logger.info(f"❌ Нерозпізнана команда від {user.first_name}: {text}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка в universal_handler: {e}", exc_info=True)
-        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        logger.error(f"❌ Помилка в universal_handler: {e}")
+        await update.message.reply_text("❌ Сталася помилка.")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
-        logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
+        logger.error(f"❌ Помилка в боті: {context.error}")
         if update and update.effective_user:
-            await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+            await update.message.reply_text("❌ Сталася помилка.")
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
@@ -440,7 +419,7 @@ def setup_handlers(application):
     application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     
     # Адмін обробники
-    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
+    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
     # Фото та універсальний обробник
@@ -451,42 +430,7 @@ def setup_handlers(application):
     application.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
 
-async def initialize_bot():
-    """Ініціалізація бота"""
-    global application
-    
-    try:
-        logger.info("🚀 Початок ініціалізації бота...")
-        
-        # Створюємо бота
-        application = Application.builder().token(TOKEN).build()
-        logger.info("✅ Application створено")
-        
-        # Налаштовуємо обробники
-        setup_handlers(application)
-        
-        # Ініціалізуємо бота
-        await application.initialize()
-        await application.start()
-        logger.info("✅ Бот ініціалізовано та запущено")
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
-        raise
-
-def run_bot():
-    """Запуск бота в окремому потоці"""
-    try:
-        asyncio.run(initialize_bot())
-    except Exception as e:
-        logger.error(f"❌ Помилка запуску бота: {e}")
-
 if __name__ == "__main__":
-    # Запускаємо бота в окремому потоці
-    import threading
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Запускаємо Flask сервер
+    # Просто запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
     app.run(host='0.0.0.0', port=PORT, debug=False)
