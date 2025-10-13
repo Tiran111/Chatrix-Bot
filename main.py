@@ -131,7 +131,7 @@ async def set_webhook():
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         logger.info("🤖 Бот готовий до роботи!")
         
-        return f"✅ Webhook встановлено: {WEBHOOK_URL}\nPending updates: {webhook_info.pending_update_count}"
+        return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
@@ -177,14 +177,14 @@ async def get_webhook_info():
         if application and application.bot:
             webhook_info = await application.bot.get_webhook_info()
             return f"""
-            📊 Webhook Info:
-            URL: {webhook_info.url}
-            Has custom certificate: {webhook_info.has_custom_certificate}
-            Pending update count: {webhook_info.pending_update_count}
-            Last error date: {webhook_info.last_error_date}
-            Last error message: {webhook_info.last_error_message}
-            Max connections: {webhook_info.max_connections}
-            Allowed updates: {webhook_info.allowed_updates}
+            📊 Webhook Info:<br>
+            URL: {webhook_info.url}<br>
+            Has custom certificate: {webhook_info.has_custom_certificate}<br>
+            Pending update count: {webhook_info.pending_update_count}<br>
+            Last error date: {webhook_info.last_error_date}<br>
+            Last error message: {webhook_info.last_error_message}<br>
+            Max connections: {webhook_info.max_connections}<br>
+            Allowed updates: {webhook_info.allowed_updates}<br>
             """
         return "❌ Бот не ініціалізований"
     except Exception as e:
