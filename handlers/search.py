@@ -1,12 +1,16 @@
+from telegram.ext import CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ContextTypes
 from database.models import db
-from keyboards.main_menu import get_main_menu, get_search_navigation
+from keyboards.main_menu import get_main_menu
+from keyboards.search_keyboards import *
 from utils.states import user_states, States
-from handlers.notifications import notification_system
+from config import ADMIN_ID
 import logging
+import random
 
 logger = logging.getLogger(__name__)
+
+def search_profiles(update: Update, context: CallbackContext):
 
 # Допоміжна функція для форматування профілю
 def format_profile_text(user_data, title=""):

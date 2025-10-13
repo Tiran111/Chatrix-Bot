@@ -1,13 +1,15 @@
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ContextTypes
+from telegram.ext import CallbackContext
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from database.models import db
 from keyboards.main_menu import get_main_menu
-from utils.states import States, user_states, user_profiles
+from keyboards.profile_keyboards import *
+from utils.states import user_states, States
+from config import ADMIN_ID
 import logging
 
 logger = logging.getLogger(__name__)
 
-async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start_profile_creation(update: Update, context: CallbackContext):
     """Початок створення профілю - ВИПРАВЛЕНО БАГ З ПЕРШОГО РАЗУ"""
     user = update.effective_user
     

@@ -1,11 +1,10 @@
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ContextTypes
+from telegram.ext import CallbackContext
+from telegram import Update, ReplyKeyboardMarkup
 from database.models import db
-from keyboards.main_menu import get_main_menu, get_admin_menu, get_cancel_keyboard
-from utils.states import States, user_states
+from keyboards.main_menu import get_main_menu
+from utils.states import user_states, States
 from config import ADMIN_ID
 import logging
-import time
 
 logger = logging.getLogger(__name__)
 
