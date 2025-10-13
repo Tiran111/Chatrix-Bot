@@ -1,8 +1,10 @@
 import logging
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.error import Conflict, TelegramError
 
 # Імпорт ваших модулів
 from database.models import db
@@ -71,8 +73,17 @@ def webhook():
         return "Error", 500
 
 @app.route('/set_webhook')
-def set_webhook():
-    """Встановити webhook"""
+def set_webhook_route():
+    """Встановити webhook через HTTP запит"""
+    try:
+        result = asyncio.run(set_webhook())
+        return result
+    except Exception as e:
+        logger.error(f"❌ Помилка встановлення webhook: {e}")
+        return f"❌ Помилка: {e}"
+
+async def set_webhook():
+    """Асинхронна функція для встановлення webhook"""
     global application
     try:
         # Створюємо бота
@@ -81,8 +92,8 @@ def set_webhook():
         # Налаштовуємо обробники
         setup_handlers(application)
         
-        # Встановлюємо webhook
-        application.bot.set_webhook(WEBHOOK_URL)
+        # Встановлюємо webhook (з await!)
+        await application.bot.set_webhook(WEBHOOK_URL)
         
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         logger.info("🤖 Бот готовий до роботи!")
@@ -94,11 +105,20 @@ def set_webhook():
         return f"❌ Помилка: {e}"
 
 @app.route('/delete_webhook')
-def delete_webhook():
-    """Видалити webhook"""
+def delete_webhook_route():
+    """Видалити webhook через HTTP запит"""
+    try:
+        result = asyncio.run(delete_webhook())
+        return result
+    except Exception as e:
+        logger.error(f"❌ Помилка видалення webhook: {e}")
+        return f"❌ Помилка: {e}"
+
+async def delete_webhook():
+    """Асинхронна функція для видалення webhook"""
     try:
         if application and application.bot:
-            application.bot.delete_webhook()
+            await application.bot.delete_webhook()
             logger.info("✅ Webhook видалено")
             return "✅ Webhook видалено"
         return "❌ Бот не ініціалізований"
@@ -489,7 +509,7 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
 
-def initialize_bot():
+async def initialize_bot():
     """Ініціалізація бота при старті"""
     global application
     try:
@@ -500,7 +520,7 @@ def initialize_bot():
         setup_handlers(application)
         
         # Встановлюємо webhook
-        application.bot.set_webhook(WEBHOOK_URL)
+        await application.bot.set_webhook(WEBHOOK_URL)
         
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         logger.info("🤖 Бот готовий до роботи!")
@@ -508,9 +528,13 @@ def initialize_bot():
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}")
 
+def run_async_init():
+    """Запуск асинхронної ініціалізації"""
+    asyncio.run(initialize_bot())
+
 if __name__ == "__main__":
     # Ініціалізуємо бота при старті
-    initialize_bot()
+    run_async_init()
     
     # Запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
