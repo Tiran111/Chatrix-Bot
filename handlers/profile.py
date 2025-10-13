@@ -2,21 +2,20 @@ from telegram.ext import CallbackContext
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from database.models import db
 from keyboards.main_menu import get_main_menu
-from keyboards.profile_keyboards import *
 from utils.states import user_states, States, user_profiles
 from config import ADMIN_ID
 import logging
 
 logger = logging.getLogger(__name__)
 
-async def start_profile_creation(update: Update, context: CallbackContext):
+def start_profile_creation(update: Update, context: CallbackContext):
     """Початок створення профілю - ВИПРАВЛЕНО БАГ З ПЕРШОГО РАЗУ"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     # Ініціалізуємо профіль - ВИПРАВЛЕНА ЛОГІКА
@@ -26,13 +25,13 @@ async def start_profile_creation(update: Update, context: CallbackContext):
     # Очищаємо попередні дані
     context.user_data.pop('profile_data', None)
     
-    await update.message.reply_text(
+    update.message.reply_text(
         "📝 *Створення профілю*\n\nВведіть ваш вік (18-100):",
         reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
         parse_mode='Markdown'
     )
 
-async def handle_profile_message(update: Update, context: CallbackContext):
+def handle_profile_message(update: Update, context: CallbackContext):
     """Обробка повідомлень під час створення профілю"""
     user = update.effective_user
     text = update.message.text
@@ -43,7 +42,7 @@ async def handle_profile_message(update: Update, context: CallbackContext):
     if text == "🔙 Скасувати":
         user_states[user.id] = States.START
         user_profiles.pop(user.id, None)
-        await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+        update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
         return
 
     # Перевіряємо чи існує профіль для користувача
@@ -54,37 +53,37 @@ async def handle_profile_message(update: Update, context: CallbackContext):
         try:
             age = int(text)
             if age < 18 or age > 100:
-                await update.message.reply_text("❌ Вік має бути від 18 до 100 років")
+                update.message.reply_text("❌ Вік має бути від 18 до 100 років")
                 return
             
             user_profiles[user.id]['age'] = age
             user_states[user.id] = States.PROFILE_GENDER
             
             keyboard = [[KeyboardButton("👨"), KeyboardButton("👩")], [KeyboardButton("🔙 Скасувати")]]
-            await update.message.reply_text(
+            update.message.reply_text(
                 f"✅ Вік: {age} років\n\nОберіть стать:",
                 reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
             )
         except ValueError:
-            await update.message.reply_text("❌ Введіть коректний вік (число)")
+            update.message.reply_text("❌ Введіть коректний вік (число)")
 
     elif state == States.PROFILE_GENDER:
         if text == "👨":
             user_profiles[user.id]['gender'] = 'male'
             user_states[user.id] = States.PROFILE_CITY
-            await update.message.reply_text(
+            update.message.reply_text(
                 "✅ Стать: 👨 Чоловік\n\nВведіть ваше місто:",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
             )
         elif text == "👩":
             user_profiles[user.id]['gender'] = 'female'
             user_states[user.id] = States.PROFILE_CITY
-            await update.message.reply_text(
+            update.message.reply_text(
                 "✅ Стать: 👩 Жінка\n\nВведіть ваше місто:",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
             )
         else:
-            await update.message.reply_text("❌ Оберіть стать з кнопок")
+            update.message.reply_text("❌ Оберіть стать з кнопок")
 
     elif state == States.PROFILE_CITY:
         if len(text) >= 2:
@@ -96,12 +95,12 @@ async def handle_profile_message(update: Update, context: CallbackContext):
                 [KeyboardButton("👫 Всіх")],
                 [KeyboardButton("🔙 Скасувати")]
             ]
-            await update.message.reply_text(
+            update.message.reply_text(
                 f"✅ Місто: {text}\n\nКого шукаєте?",
                 reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
             )
         else:
-            await update.message.reply_text("❌ Назва міста закоротка. Спробуйте ще раз:")
+            update.message.reply_text("❌ Назва міста закоротка. Спробуйте ще раз:")
 
     elif state == States.PROFILE_SEEKING_GENDER:
         if text == "👩 Дівчину":
@@ -114,7 +113,7 @@ async def handle_profile_message(update: Update, context: CallbackContext):
             user_profiles[user.id]['seeking_gender'] = 'all'
             user_states[user.id] = States.PROFILE_GOAL
         else:
-            await update.message.reply_text("❌ Оберіть варіант з кнопок")
+            update.message.reply_text("❌ Оберіть варіант з кнопок")
             return
         
         # Показуємо вибір цілі
@@ -129,7 +128,7 @@ async def handle_profile_message(update: Update, context: CallbackContext):
             'all': '👫 Всіх'
         }.get(user_profiles[user.id]['seeking_gender'])
         
-        await update.message.reply_text(
+        update.message.reply_text(
             f"✅ Шукаю: {seeking_text}\n\nОберіть ціль знайомства:",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -145,12 +144,12 @@ async def handle_profile_message(update: Update, context: CallbackContext):
         if text in goal_map:
             user_profiles[user.id]['goal'] = goal_map[text]
             user_states[user.id] = States.PROFILE_BIO
-            await update.message.reply_text(
+            update.message.reply_text(
                 f"✅ Ціль: {text}\n\nНапишіть про себе (мінімум 10 символів):",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
             )
         else:
-            await update.message.reply_text("❌ Оберіть ціль з кнопок")
+            update.message.reply_text("❌ Оберіть ціль з кнопок")
 
     elif state == States.PROFILE_BIO:
         if len(text) >= 10:
@@ -169,17 +168,17 @@ async def handle_profile_message(update: Update, context: CallbackContext):
             
             if success:
                 user_states[user.id] = States.ADD_MAIN_PHOTO
-                await update.message.reply_text(
+                update.message.reply_text(
                     "🎉 *Профіль створено!*\n\nТепер додайте фото для профілю (максимум 3 фото):",
                     reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
                     parse_mode='Markdown'
                 )
             else:
-                await update.message.reply_text("❌ Помилка збереження профілю")
+                update.message.reply_text("❌ Помилка збереження профілю")
         else:
-            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
+            update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
 
-async def handle_main_photo(update: Update, context: CallbackContext):
+def handle_main_photo(update: Update, context: CallbackContext):
     """Обробка додавання фото"""
     user = update.effective_user
     
@@ -192,39 +191,39 @@ async def handle_main_photo(update: Update, context: CallbackContext):
         if success:
             photos = db.get_profile_photos(user.id)
             if len(photos) < 3:
-                await update.message.reply_text(
+                update.message.reply_text(
                     f"✅ Фото додано! У вас {len(photos)}/3 фото\nНадішліть ще фото або натисніть '🔙 Завершити'",
                     reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
                 )
             else:
                 user_states[user.id] = States.START
                 user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
-                await update.message.reply_text(
+                update.message.reply_text(
                     "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль готовий!",
                     reply_markup=get_main_menu(user.id)
                 )
         else:
-            await update.message.reply_text("❌ Помилка додавання фото")
+            update.message.reply_text("❌ Помилка додавання фото")
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
         user_states[user.id] = States.START
         user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
         photos_count = len(db.get_profile_photos(user.id))
-        await update.message.reply_text(
+        update.message.reply_text(
             f"🎉 Профіль створено! Додано {photos_count} фото",
             reply_markup=get_main_menu(user.id)
         )
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:
-        await update.message.reply_text("📷 Будь ласка, надішліть фото:")
+        update.message.reply_text("📷 Будь ласка, надішліть фото:")
 
-async def show_my_profile(update: Update, context: CallbackContext):
+def show_my_profile(update: Update, context: CallbackContext):
     """Показати профіль користувача"""
     user = update.effective_user
     user_data = db.get_user(user.id)
     
     if not user_data or not user_data.get('age'):
-        await update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
+        update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
         return
     
     photos = db.get_profile_photos(user.id)
@@ -262,14 +261,14 @@ async def show_my_profile(update: Update, context: CallbackContext):
     
     # Відправляємо фото з описом
     if photos:
-        await update.message.reply_photo(
+        update.message.reply_photo(
             photo=photos[0], 
             caption=profile_text,
             reply_markup=get_main_menu(user.id),
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text(
+        update.message.reply_text(
             profile_text,
             reply_markup=get_main_menu(user.id),
             parse_mode='Markdown'
