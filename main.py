@@ -57,61 +57,96 @@ def ping():
 def webhook():
     """Webhook для Telegram"""
     try:
+        logger.info("📨 Отримано webhook запит від Telegram")
+        logger.info(f"📊 Заголовки: {dict(request.headers)}")
+        
         if application is None:
             logger.error("❌ Бот не ініціалізований")
             return "Bot not initialized", 500
             
         # Отримуємо оновлення від Telegram
-        update = Update.de_json(request.get_json(), application.bot)
+        update_data = request.get_json()
+        logger.info(f"📦 Дані оновлення отримано, тип: {type(update_data)}")
+        
+        if update_data is None:
+            logger.error("❌ Порожні дані оновлення")
+            return "Empty update data", 400
+            
+        logger.info(f"🔍 Ключі в оновленні: {list(update_data.keys()) if update_data else 'None'}")
+        
+        update = Update.de_json(update_data, application.bot)
+        logger.info(f"✅ Оновлення створено, тип: {type(update)}")
+        
+        # Логуємо деталі оновлення
+        if update.message:
+            logger.info(f"💬 Повідомлення: {update.message.text if update.message.text else 'No text'}")
+            logger.info(f"👤 Користувач: {update.message.from_user.first_name if update.message.from_user else 'No user'}")
+        elif update.callback_query:
+            logger.info(f"🔄 Callback query: {update.callback_query.data}")
         
         # Додаємо оновлення в чергу
         application.update_queue.put_nowait(update)
+        logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
+        
     except Exception as e:
-        logger.error(f"❌ Помилка в webhook: {e}")
+        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
         return "Error", 500
 
 @app.route('/set_webhook')
 def set_webhook_route():
     """Встановити webhook через HTTP запит"""
+    logger.info("🔄 Запит на встановлення webhook")
     try:
         result = asyncio.run(set_webhook())
+        logger.info(f"✅ Результат встановлення webhook: {result}")
         return result
     except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}")
+        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 async def set_webhook():
     """Асинхронна функція для встановлення webhook"""
     global application
     try:
+        logger.info("🚀 Початок ініціалізації бота...")
+        
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
         
         # Налаштовуємо обробники
         setup_handlers(application)
+        logger.info("✅ Обробники налаштовано")
         
         # Встановлюємо webhook (з await!)
+        logger.info(f"🌐 Встановлення webhook на URL: {WEBHOOK_URL}")
         await application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Перевіряємо webhook
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
         
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         logger.info("🤖 Бот готовий до роботи!")
         
-        return f"✅ Webhook встановлено: {WEBHOOK_URL}"
+        return f"✅ Webhook встановлено: {WEBHOOK_URL}\nPending updates: {webhook_info.pending_update_count}"
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 @app.route('/delete_webhook')
 def delete_webhook_route():
     """Видалити webhook через HTTP запит"""
+    logger.info("🔄 Запит на видалення webhook")
     try:
         result = asyncio.run(delete_webhook())
+        logger.info(f"✅ Результат видалення webhook: {result}")
         return result
     except Exception as e:
-        logger.error(f"❌ Помилка видалення webhook: {e}")
+        logger.error(f"❌ Помилка видалення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 async def delete_webhook():
@@ -121,9 +156,38 @@ async def delete_webhook():
             await application.bot.delete_webhook()
             logger.info("✅ Webhook видалено")
             return "✅ Webhook видалено"
+        logger.warning("❌ Бот не ініціалізований для видалення webhook")
         return "❌ Бот не ініціалізований"
     except Exception as e:
-        logger.error(f"❌ Помилка видалення webhook: {e}")
+        logger.error(f"❌ Помилка видалення webhook: {e}", exc_info=True)
+        return f"❌ Помилка: {e}"
+
+@app.route('/webhook_info')
+def webhook_info_route():
+    """Отримати інформацію про webhook"""
+    try:
+        result = asyncio.run(get_webhook_info())
+        return result
+    except Exception as e:
+        return f"❌ Помилка: {e}"
+
+async def get_webhook_info():
+    """Отримати інформацію про webhook"""
+    try:
+        if application and application.bot:
+            webhook_info = await application.bot.get_webhook_info()
+            return f"""
+            📊 Webhook Info:
+            URL: {webhook_info.url}
+            Has custom certificate: {webhook_info.has_custom_certificate}
+            Pending update count: {webhook_info.pending_update_count}
+            Last error date: {webhook_info.last_error_date}
+            Last error message: {webhook_info.last_error_message}
+            Max connections: {webhook_info.max_connections}
+            Allowed updates: {webhook_info.allowed_updates}
+            """
+        return "❌ Бот не ініціалізований"
+    except Exception as e:
         return f"❌ Помилка: {e}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,13 +195,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
         
-        logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id})")
+        logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
         
         # Додаємо користувача в базу
         db.add_user(user.id, user.username, user.first_name)
+        logger.info(f"✅ Користувач {user.id} доданий в базу")
         
         # Скидаємо стан
         user_states[user.id] = States.START
+        logger.info(f"✅ Стан скинуто для {user.id}")
         
         # Вітання
         welcome_text = (
@@ -148,6 +214,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Перевіряємо чи заповнений профіль
         user_data, is_complete = db.get_user_profile(user.id)
+        logger.info(f"📊 Профіль користувача {user.id}: complete={is_complete}")
         
         if not is_complete:
             welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
@@ -170,14 +237,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+        logger.info(f"✅ Відправлено вітальне повідомлення для {user.first_name}")
+        
     except Exception as e:
-        logger.error(f"❌ Помилка в /start: {e}")
+        logger.error(f"❌ Помилка в /start: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
+        logger.info(f"👨‍💼 Користувач {user.first_name} запитує зв'язок з адміном")
         
         contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
 
@@ -196,14 +266,17 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
             parse_mode='Markdown'
         )
+        logger.info(f"✅ Запит на зв'язок з адміном оброблено для {user.first_name}")
+        
     except Exception as e:
-        logger.error(f"❌ Помилка в contact_admin: {e}")
+        logger.error(f"❌ Помилка в contact_admin: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка повідомлення для адміна"""
     try:
         user = update.effective_user
+        logger.info(f"📩 Обробка повідомлення для адміна від {user.first_name}")
         
         # Перевіряємо стан
         if user_states.get(user.id) != States.CONTACT_ADMIN:
@@ -215,6 +288,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         if message_text == "🔙 Скасувати":
             user_states[user.id] = States.START
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+            logger.info(f"✅ Скасовано зв'язок з адміном для {user.first_name}")
             return
         
         # Відправляємо повідомлення адміну
@@ -237,6 +311,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
                 "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
                 reply_markup=get_main_menu(user.id)
             )
+            logger.info(f"✅ Повідомлення від {user.first_name} відправлено адміну")
             
         except Exception as e:
             logger.error(f"❌ Помилка відправки повідомлення адміну: {e}")
@@ -250,7 +325,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         logger.info(f"✅ Стан скинуто для користувача {user.id}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка в handle_contact_message: {e}")
+        logger.error(f"❌ Помилка в handle_contact_message: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -292,18 +367,24 @@ async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             debug_info += f"\n\n👤 *Знайдений користувач:*\n• ID: `{random_user[1]}`\n• Стать: {random_user[5]}"
         
         await update.message.reply_text(debug_info, parse_mode='Markdown')
+        logger.info(f"✅ Дебаг інформація відправлена для {user.first_name}")
+        
     except Exception as e:
-        logger.error(f"❌ Помилка в debug_search: {e}")
+        logger.error(f"❌ Помилка в debug_search: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def safe_await_handler(handler_func, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Безпечний виклик обробника з перевіркою на корутину"""
     try:
+        logger.info(f"🔄 Виклик обробника: {handler_func.__name__}")
         result = handler_func(update, context)
         if hasattr(result, '__await__'):
             await result
+            logger.info(f"✅ Обробник {handler_func.__name__} завершено")
+        else:
+            logger.info(f"ℹ️ Обробник {handler_func.__name__} не асинхронний")
     except Exception as e:
-        logger.error(f"❌ Помилка в {handler_func.__name__}: {e}")
+        logger.error(f"❌ Помилка в {handler_func.__name__}: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -321,6 +402,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop('waiting_for_city', None)
             context.user_data.pop('contact_admin', None)
             await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
+            logger.info(f"✅ Дію скасовано для {user.first_name}")
             return
 
         # 2. Обробка зв'язку з адміном
@@ -458,15 +540,16 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
             reply_markup=get_main_menu(user.id)
         )
+        logger.info(f"❌ Нерозпізнана команда від {user.first_name}: {text}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка в universal_handler: {e}")
+        logger.error(f"❌ Помилка в universal_handler: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
-        logger.error(f"❌ Помилка: {context.error}", exc_info=True)
+        logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
         if update and update.effective_user:
             await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
     except Exception as e:
@@ -474,6 +557,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def setup_handlers(application):
     """Налаштування обробників"""
+    logger.info("🔄 Налаштування обробників...")
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("debug_search", debug_search))
@@ -508,25 +592,34 @@ def setup_handlers(application):
 
     # Обробник помилок
     application.add_error_handler(error_handler)
+    logger.info("✅ Всі обробники налаштовано")
 
 async def initialize_bot():
     """Ініціалізація бота при старті"""
     global application
     try:
+        logger.info("🚀 Початок ініціалізації бота...")
+        
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
         
         # Налаштовуємо обробники
         setup_handlers(application)
         
         # Встановлюємо webhook
+        logger.info(f"🌐 Встановлення webhook на URL: {WEBHOOK_URL}")
         await application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Перевіряємо webhook
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
         
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         logger.info("🤖 Бот готовий до роботи!")
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
 
 def run_async_init():
     """Запуск асинхронної ініціалізації"""
