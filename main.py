@@ -807,10 +807,14 @@ def start_telegram_bot():
         
         logger.info("✅ Бот запущено!")
         
-        # Запускаємо polling
+        # Запускаємо polling БЕЗ idle()
         updater.start_polling()
-        updater.idle()
         
+        # Простий нескінченний цикл
+        import time
+        while True:
+            time.sleep(10)
+            
     except Exception as e:
         logger.error(f"❌ Помилка запуску бота: {e}")
 
