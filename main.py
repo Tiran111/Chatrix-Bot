@@ -1,8 +1,10 @@
 import logging
 import os
+import time
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.error import Conflict
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -17,15 +19,9 @@ TOKEN = os.environ.get('BOT_TOKEN')
 def home():
     return "🤖 Chatrix Bot is running!"
 
-@app.route('/health')
-def health():
-    return "OK", 200
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник команди /start"""
     user = update.effective_user
     
-    # Головне меню
     keyboard = [
         ['📝 Заповнити профіль', '👤 Мій профіль'],
         ['💕 Пошук анкет', '🏙️ По місту'],
@@ -35,68 +31,64 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(
-        f"👋 Вітаю, {user.first_name}!\n\n"
-        f"💞 *Chatrix* — бот для знайомств!\n\n"
-        f"🎯 Оберіть дію з меню:",
+        f"👋 Вітаю, {user.first_name}!\n💞 *Chatrix* — бот для знайомств!",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
-async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник всіх текстових повідомлень"""
-    user = update.effective_user
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    
-    logger.info(f"📨 Повідомлення від {user.first_name}: '{text}'")
-    
-    # Відповіді на кнопки меню
     responses = {
-        "📝 Заповнити профіль": "📝 Розділ заповнення профілю!",
-        "👤 Мій профіль": "👤 Тут буде ваш профіль",
-        "💕 Пошук анкет": "💕 Шукаємо анкети для вас...",
-        "🏙️ По місту": "🏙️ Введіть назву міста для пошуку",
-        "❤️ Хто мене лайкнув": "❤️ Перевіряємо ваші лайки...", 
-        "💌 Мої матчі": "💌 Завантажуємо ваші матчі...",
-        "🏆 Топ": "🏆 Завантажуємо топ користувачів...",
-        "👨‍💼 Зв'язок з адміном": "👨‍💼 Для зв'язку з адміністратором напишіть @admin"
+        "📝 Заповнити профіль": "📝 Заповнення профілю...",
+        "👤 Мій профіль": "👤 Ваш профіль...", 
+        "💕 Пошук анкет": "💕 Пошук анкет...",
+        "🏙️ По місту": "🏙️ Пошук по місту...",
+        "❤️ Хто мене лайкнув": "❤️ Перегляд лайків...",
+        "💌 Мої матчі": "💌 Ваші матчі...",
+        "🏆 Топ": "🏆 Топ користувачів...",
+        "👨‍💼 Зв'язок з адміном": "👨‍💼 Зв'язок з адміном..."
     }
     
-    if text in responses:
-        await update.message.reply_text(responses[text])
-    else:
-        await update.message.reply_text(
-            "🤖 Використовуйте кнопки меню для навігації. "
-            "Якщо меню зникло, напишіть /start"
-        )
+    response = responses.get(text, "❌ Команда не розпізнана")
+    await update.message.reply_text(response)
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    error = context.error
+    if isinstance(error, Conflict):
+        logger.warning("⚠️ Конфлікт - зупиняємо бота")
+        # Зупиняємо бота при конфлікті
+        if context.application.running:
+            await context.application.stop()
+        return
+    logger.error(f"❌ Помилка: {error}")
 
 def main():
-    logger.info("🚀 Запуск Chatrix Bot...")
+    logger.info("🔄 Очікування 30 секунд перед запуском...")
+    time.sleep(30)  # Чекаємо, поки можливі інші процеси зупиняться
+    
+    logger.info("🚀 Запуск бота...")
     
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # Додаємо обробники - ВАЖЛИВО: спочатку команди, потім текст
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+        application.add_error_handler(error_handler)
         
-        # Flask для Render
         def run_flask():
             port = int(os.environ.get('PORT', 10000))
-            logger.info(f"🌐 Flask запущено на порті {port}")
             app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
         
         import threading
-        flask_thread = threading.Thread(target=run_flask, daemon=True)
-        flask_thread.start()
+        threading.Thread(target=run_flask, daemon=True).start()
         
-        logger.info("✅ Бот успішно запущений!")
-        application.run_polling(
-            drop_pending_updates=True,
-            timeout=10
-        )
+        logger.info("✅ Бот запущено!")
+        application.run_polling(drop_pending_updates=True)
         
+    except Conflict:
+        logger.error("🚫 Конфлікт - бот вже запущений деінде")
     except Exception as e:
-        logger.error(f"❌ Помилка запуску: {e}")
+        logger.error(f"❌ Помилка: {e}")
 
 if __name__ == "__main__":
     main()
