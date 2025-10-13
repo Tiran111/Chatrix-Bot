@@ -1,12 +1,11 @@
 import logging
 import os
-import time
 import asyncio
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes,
-    CallbackQueryHandler, filters
+    filters
 )
 from telegram.error import Conflict, TelegramError
 
@@ -16,7 +15,7 @@ from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 
-# Імпорт обробників
+# Імпорт всіх обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 from handlers.admin import show_admin_panel, handle_admin_actions, show_users_management, show_users_list, start_broadcast, update_database, show_ban_management, show_banned_users, show_detailed_stats, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
@@ -422,51 +421,6 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
 
-async def start_telegram_bot():
-    """Запуск Telegram бота"""
-    max_retries = 5
-    retry_count = 0
-    
-    while retry_count < max_retries:
-        try:
-            logger.info(f"🚀 Запуск Telegram Bot... (спроба {retry_count + 1}/{max_retries})")
-            
-            # Створюємо Application
-            application = Application.builder().token(TOKEN).build()
-            
-            # Налаштовуємо обробники
-            setup_handlers(application)
-            
-            logger.info("✅ Бот запущено!")
-            
-            # Запускаємо polling (видалено read_latency)
-            await application.run_polling(
-                drop_pending_updates=True,
-                timeout=10
-            )
-            
-            break
-            
-        except Conflict as e:
-            retry_count += 1
-            logger.warning(f"⚠️ Конфлікт при запуску бота. Спробуємо знову через 15 секунд... ({retry_count}/{max_retries})")
-            if retry_count < max_retries:
-                await asyncio.sleep(15)
-            else:
-                logger.error("❌ Досягнуто максимальну кількість спроб. Зупиняємо бота.")
-                break
-        except TelegramError as e:
-            retry_count += 1
-            logger.warning(f"⚠️ Помилка Telegram: {e}. Спробуємо знову через 10 секунд... ({retry_count}/{max_retries})")
-            if retry_count < max_retries:
-                await asyncio.sleep(10)
-            else:
-                logger.error("❌ Досягнуто максимальну кількість спроб. Зупиняємо бота.")
-                break
-        except Exception as e:
-            logger.error(f"❌ Неочікувана помилка запуску бота: {e}")
-            break
-
 def start_flask():
     """Запуск Flask сервера"""
     port = int(os.environ.get("PORT", 10000))
@@ -475,20 +429,34 @@ def start_flask():
     # Вимикаємо reloader, щоб уникнути подвійного запуску
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-async def main():
+def main():
     """Головна функція запуску"""
-    # Визначаємо тип запуску через змінну оточення
-    run_type = os.environ.get("RUN_TYPE", "bot")
+    logger.info("🚀 Запуск Telegram Bot...")
     
-    logger.info(f"🎯 Тип запуску: {run_type}")
-    
-    if run_type == "web":
-        logger.info("🚀 Запуск Flask Web Server...")
-        start_flask()
-    else:
-        logger.info("🚀 Запуск Telegram Bot...")
-        await start_telegram_bot()
+    try:
+        # Створюємо Application
+        application = Application.builder().token(TOKEN).build()
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        
+        logger.info("✅ Бот запущено!")
+        
+        # Запускаємо Flask в окремому потоці
+        import threading
+        flask_thread = threading.Thread(target=start_flask, daemon=True)
+        flask_thread.start()
+        
+        # Запускаємо бота (блокуючий виклик)
+        application.run_polling(
+            drop_pending_updates=True,
+            timeout=10
+        )
+        
+    except Conflict as e:
+        logger.warning("⚠️ Конфлікт: інший екземпляр бота вже запущений")
+    except Exception as e:
+        logger.error(f"❌ Помилка запуску бота: {e}")
 
 if __name__ == "__main__":
-    # Запускаємо асинхронну головну функцію
-    asyncio.run(main())
+    main()
