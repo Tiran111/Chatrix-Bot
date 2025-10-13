@@ -1,16 +1,22 @@
 import logging
 import os
 import time
+import asyncio
 from flask import Flask
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, ContextTypes,
+    CallbackQueryHandler, filters
+)
 from telegram.error import Conflict, TelegramError
+
+# Імпорт ваших модулів (переконайтеся, що вони сумісні з новою версією)
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 
-# Імпорт обробників
+# Імпорт обробників (потрібно буде також оновити їх)
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 from handlers.admin import show_admin_panel, handle_admin_actions, show_users_management, show_users_list, start_broadcast, update_database, show_ban_management, show_banned_users, show_detailed_stats, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
@@ -44,7 +50,7 @@ def healthz():
 def ping():
     return "pong", 200
 
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
     try:
         user = update.effective_user
@@ -83,16 +89,16 @@ def start(update: Update, context: CallbackContext):
         
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
-        update.message.reply_text(
+        await update.message.reply_text(
             welcome_text,
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
     except Exception as e:
         logger.error(f"❌ Помилка в /start: {e}")
-        update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-def contact_admin(update: Update, context: CallbackContext):
+async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
@@ -109,16 +115,16 @@ def contact_admin(update: Update, context: CallbackContext):
         # Встановлюємо стан очікування повідомлення для адміна
         user_states[user.id] = States.CONTACT_ADMIN
         
-        update.message.reply_text(
+        await update.message.reply_text(
             contact_text,
             reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
             parse_mode='Markdown'
         )
     except Exception as e:
         logger.error(f"❌ Помилка в contact_admin: {e}")
-        update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-def handle_contact_message(update: Update, context: CallbackContext):
+async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка повідомлення для адміна"""
     try:
         user = update.effective_user
@@ -132,7 +138,7 @@ def handle_contact_message(update: Update, context: CallbackContext):
         
         if message_text == "🔙 Скасувати":
             user_states[user.id] = States.START
-            update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+            await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
         
         # Відправляємо повідомлення адміну
@@ -144,21 +150,21 @@ def handle_contact_message(update: Update, context: CallbackContext):
 📝 *Повідомлення:*
 {message_text}"""
 
-            context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=admin_message,
                 parse_mode='Markdown'
             )
             
             # Підтверджуємо користувачу
-            update.message.reply_text(
+            await update.message.reply_text(
                 "✅ Ваше повідомлення відправлено адміністратору! Він зв'яжеться з вами найближчим часом.",
                 reply_markup=get_main_menu(user.id)
             )
             
         except Exception as e:
             logger.error(f"❌ Помилка відправки повідомлення адміну: {e}")
-            update.message.reply_text(
+            await update.message.reply_text(
                 "❌ Помилка відправки повідомлення. Спробуйте пізніше.",
                 reply_markup=get_main_menu(user.id)
             )
@@ -169,9 +175,9 @@ def handle_contact_message(update: Update, context: CallbackContext):
         
     except Exception as e:
         logger.error(f"❌ Помилка в handle_contact_message: {e}")
-        update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-def debug_search(update: Update, context: CallbackContext):
+async def debug_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда для дебагу пошуку"""
     try:
         user = update.effective_user
@@ -181,7 +187,7 @@ def debug_search(update: Update, context: CallbackContext):
         current_user = db.get_user(user.id)
         
         if not current_user:
-            update.message.reply_text("❌ Вашого профілю не знайдено")
+            await update.message.reply_text("❌ Вашого профілю не знайдено")
             return
         
         # Дебаг пошуку
@@ -209,12 +215,12 @@ def debug_search(update: Update, context: CallbackContext):
         if random_user:
             debug_info += f"\n\n👤 *Знайдений користувач:*\n• ID: `{random_user[1]}`\n• Стать: {random_user[5]}"
         
-        update.message.reply_text(debug_info, parse_mode='Markdown')
+        await update.message.reply_text(debug_info, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"❌ Помилка в debug_search: {e}")
-        update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-def universal_handler(update: Update, context: CallbackContext):
+async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Універсальний обробник повідомлень"""
     try:
         user = update.effective_user
@@ -228,24 +234,24 @@ def universal_handler(update: Update, context: CallbackContext):
             user_states[user.id] = States.START
             context.user_data.pop('waiting_for_city', None)
             context.user_data.pop('contact_admin', None)
-            update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
+            await update.message.reply_text("❌ Дію скасовано", reply_markup=get_main_menu(user.id))
             return
 
         # 2. Обробка зв'язку з адміном
         if state == States.CONTACT_ADMIN:
             logger.info(f"🔧 Обробка повідомлення для адміна від {user.id}")
-            handle_contact_message(update, context)
+            await handle_contact_message(update, context)
             return
 
         # 3. Перевіряємо додавання фото
         if state == States.ADD_MAIN_PHOTO:
-            handle_main_photo(update, context)
+            await handle_main_photo(update, context)
             return
 
         # 4. Перевіряємо стани профілю
         if state in [States.PROFILE_AGE, States.PROFILE_GENDER, States.PROFILE_SEEKING_GENDER, 
                      States.PROFILE_CITY, States.PROFILE_GOAL, States.PROFILE_BIO]:
-            handle_profile_message(update, context)
+            await handle_profile_message(update, context)
             return
         
         # 5. Перевіряємо введення міста для пошуку
@@ -255,12 +261,12 @@ def universal_handler(update: Update, context: CallbackContext):
             
             if users:
                 user_data = users[0]
-                show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
+                await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
                 context.user_data['search_users'] = users
                 context.user_data['current_index'] = 0
                 context.user_data['search_type'] = 'city'
             else:
-                update.message.reply_text(
+                await update.message.reply_text(
                     f"😔 Не знайдено анкет у місті {clean_city}",
                     reply_markup=get_main_menu(user.id)
                 )
@@ -272,205 +278,181 @@ def universal_handler(update: Update, context: CallbackContext):
         if user.id == ADMIN_ID:
             state = user_states.get(user.id)
             if state == States.ADMIN_BAN_USER:
-                handle_ban_user(update, context)
+                await handle_ban_user(update, context)
                 return
             elif state == States.ADMIN_UNBAN_USER:
-                handle_unban_user(update, context)
+                await handle_unban_user(update, context)
                 return
             elif state == States.BROADCAST:
-                handle_broadcast_message(update, context)
+                await handle_broadcast_message(update, context)
                 return
         
         # 7. Адмін-меню
         if user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "📈 Детальна статистика"]:
-                handle_admin_actions(update, context)
+                await handle_admin_actions(update, context)
                 return
             
             # Обробка адмін-кнопок керування користувачами
             if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
                 if text == "📋 Список користувачів":
-                    show_users_list(update, context)
+                    await show_users_list(update, context)
                 elif text == "🚫 Заблокувати користувача":
-                    start_ban_user(update, context)
+                    await start_ban_user(update, context)
                 elif text == "✅ Розблокувати користувача":
-                    start_unban_user(update, context)
+                    await start_unban_user(update, context)
                 elif text == "📋 Список заблокованих":
-                    show_banned_users(update, context)
+                    await show_banned_users(update, context)
                 elif text == "🔙 Назад до адмін-панелі":
-                    show_admin_panel(update, context)
+                    await show_admin_panel(update, context)
                 return
         
         # 8. Обробка команд меню
         if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
-            start_profile_creation(update, context)
+            await start_profile_creation(update, context)
             return
         
         elif text == "👤 Мій профіль":
-            show_my_profile(update, context)
+            await show_my_profile(update, context)
             return
         
         elif text == "💕 Пошук анкет":
-            search_profiles(update, context)
+            await search_profiles(update, context)
             return
         
         elif text == "🏙️ По місту":
-            search_by_city(update, context)
+            await search_by_city(update, context)
             return
         
         elif text == "❤️ Лайк":
-            handle_like(update, context)
+            await handle_like(update, context)
             return
         
         elif text == "➡️ Далі":
-            show_next_profile(update, context)
+            await show_next_profile(update, context)
             return
         
         elif text == "🔙 Меню":
-            update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(user.id))
+            await update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(user.id))
             return
         
         elif text == "🏆 Топ":
-            show_top_users(update, context)
+            await show_top_users(update, context)
             return
         
         elif text == "💌 Мої матчі":
-            show_matches(update, context)
+            await show_matches(update, context)
             return
         
         elif text == "❤️ Хто мене лайкнув":
-            show_likes(update, context)
+            await show_likes(update, context)
             return
         
         elif text in ["👨 Топ чоловіків", "👩 Топ жінок", "🏆 Загальний топ"]:
-            handle_top_selection(update, context)
+            await handle_top_selection(update, context)
             return
         
         # 9. Обробка кнопки зв'язку з адміном
         elif text == "👨‍💼 Зв'язок з адміном":
-            contact_admin(update, context)
+            await contact_admin(update, context)
             return
         
         # 10. Команда дебагу
         elif text == "/debug_search":
-            debug_search(update, context)
+            await debug_search(update, context)
             return
         
         # 11. Якщо нічого не підійшло
-        update.message.reply_text(
+        await update.message.reply_text(
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
             reply_markup=get_main_menu(user.id)
         )
         
     except Exception as e:
         logger.error(f"❌ Помилка в universal_handler: {e}")
-        update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
 
-def error_handler(update: Update, context: CallbackContext):
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
         if isinstance(context.error, Conflict):
             logger.warning("⚠️ Конфлікт: запущено кілька екземплярів бота. Зупиняємо поточний...")
-            # Зупиняємо цей екземпляр
-            if context.dispatcher.running:
-                context.dispatcher.stop()
-            if context.dispatcher.updater.running:
-                context.dispatcher.updater.stop()
             return
         
         logger.error(f"❌ Помилка: {context.error}", exc_info=True)
         if update and update.effective_user:
-            update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+            await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
-def setup_handlers(updater):
+def setup_handlers(application):
     """Налаштування обробників"""
-    dispatcher = updater.dispatcher
     
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("debug_search", debug_search))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("debug_search", debug_search))
     
     # Обробники кнопок
-    dispatcher.add_handler(MessageHandler(Filters.regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^👤 Мій профіль$'), show_my_profile))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^💕 Пошук анкет$'), search_profiles))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^🏙️ По місту$'), search_by_city))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^❤️ Лайк$'), handle_like))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^➡️ Далі$'), show_next_profile))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^🏆 Топ$'), show_top_users))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^💌 Мої матчі$'), show_matches))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^❤️ Хто мене лайкнув$'), show_likes))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    dispatcher.add_handler(MessageHandler(Filters.regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
+    application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     
     # Адмін обробники
-    dispatcher.add_handler(MessageHandler(Filters.regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
-    dispatcher.add_handler(MessageHandler(Filters.regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|📈 Детальна статистика)$'), handle_admin_actions))
+    application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
     # Обробники для станів блокування
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex('^🚫 Заблокувати$'), start_ban_user))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex('^✅ Розблокувати$'), start_unban_user))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex('^🚫 Заблокувати користувача$'), start_ban_user))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex('^✅ Розблокувати користувача$'), start_unban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати$'), start_ban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати$'), start_unban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^🚫 Заблокувати користувача$'), start_ban_user))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex('^✅ Розблокувати користувача$'), start_unban_user))
     
     # Фото та універсальний обробник
-    dispatcher.add_handler(MessageHandler(Filters.photo, handle_main_photo))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, universal_handler))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
 
     # Обробник помилок
-    dispatcher.add_error_handler(error_handler)
+    application.add_error_handler(error_handler)
 
-def start_telegram_bot():
+async def start_telegram_bot():
     """Запуск Telegram бота"""
     max_retries = 5
     retry_count = 0
-    updater = None
     
     while retry_count < max_retries:
         try:
             logger.info(f"🚀 Запуск Telegram Bot... (спроба {retry_count + 1}/{max_retries})")
             
-            # Зупиняємо попередній екземпляр, якщо він існує
-            if updater:
-                try:
-                    updater.stop()
-                except:
-                    pass
-            
-            # Створюємо новий updater
-            updater = Updater(TOKEN, use_context=True)
+            # Створюємо Application
+            application = Application.builder().token(TOKEN).build()
             
             # Налаштовуємо обробники
-            setup_handlers(updater)
+            setup_handlers(application)
             
             logger.info("✅ Бот запущено!")
             
-            # Запускаємо polling з обробкою помилок
-            updater.start_polling(
-                drop_pending_updates=True,  # Ігноруємо старі повідомлення
+            # Запускаємо polling
+            await application.run_polling(
+                drop_pending_updates=True,
                 timeout=10,
                 read_latency=2.0
             )
             
-            # Запускаємо Flask сервер в окремому потоці
-            from threading import Thread
-            flask_thread = Thread(target=start_flask)
-            flask_thread.daemon = True
-            flask_thread.start()
-            
-            logger.info("✅ Обидва сервіси запущено успішно!")
-            
-            # Очікуємо поки бот працює
-            updater.idle()
             break
             
         except Conflict as e:
             retry_count += 1
             logger.warning(f"⚠️ Конфлікт при запуску бота. Спробуємо знову через 15 секунд... ({retry_count}/{max_retries})")
             if retry_count < max_retries:
-                time.sleep(15)
+                await asyncio.sleep(15)
             else:
                 logger.error("❌ Досягнуто максимальну кількість спроб. Зупиняємо бота.")
                 break
@@ -478,20 +460,13 @@ def start_telegram_bot():
             retry_count += 1
             logger.warning(f"⚠️ Помилка Telegram: {e}. Спробуємо знову через 10 секунд... ({retry_count}/{max_retries})")
             if retry_count < max_retries:
-                time.sleep(10)
+                await asyncio.sleep(10)
             else:
                 logger.error("❌ Досягнуто максимальну кількість спроб. Зупиняємо бота.")
                 break
         except Exception as e:
             logger.error(f"❌ Неочікувана помилка запуску бота: {e}")
             break
-        finally:
-            # Завжди зупиняємо updater при виході
-            if updater:
-                try:
-                    updater.stop()
-                except:
-                    pass
 
 def start_flask():
     """Запуск Flask сервера"""
@@ -501,7 +476,7 @@ def start_flask():
     # Вимикаємо reloader, щоб уникнути подвійного запуску
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-def main():
+async def main():
     """Головна функція запуску"""
     # Визначаємо тип запуску через змінну оточення
     run_type = os.environ.get("RUN_TYPE", "bot")
@@ -513,7 +488,8 @@ def main():
         start_flask()
     else:
         logger.info("🚀 Запуск Telegram Bot...")
-        start_telegram_bot()
+        await start_telegram_bot()
 
 if __name__ == "__main__":
-    main()
+    # Запускаємо асинхронну головну функцію
+    asyncio.run(main())
