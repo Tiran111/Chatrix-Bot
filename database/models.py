@@ -197,9 +197,10 @@ class Database:
             return None
     
     def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Оновлення профілю користувача"""
+        """Оновлення профілю користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
+            logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
             
             self.cursor.execute('''
                 UPDATE users 
@@ -211,7 +212,12 @@ class Database:
             self.update_user_rating(telegram_id)
             
             self.conn.commit()
-            logger.info(f"✅ Профіль оновлено для {telegram_id}")
+            
+            # Перевіряємо оновлені дані
+            self.cursor.execute('SELECT age, gender, city, seeking_gender, goal FROM users WHERE telegram_id = ?', (telegram_id,))
+            updated_data = self.cursor.fetchone()
+            logger.info(f"✅ Профіль оновлено для {telegram_id}. Перевірка: {updated_data}")
+            
             return True
                 
         except Exception as e:

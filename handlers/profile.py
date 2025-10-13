@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def start_profile_creation(update: Update, context: CallbackContext):
-    """Початок створення профілю - ВИПРАВЛЕНО БАГ З ПЕРШОГО РАЗУ"""
+    """Початок створення профілю"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
@@ -18,12 +18,14 @@ def start_profile_creation(update: Update, context: CallbackContext):
         update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
-    # Ініціалізуємо профіль - ВИПРАВЛЕНА ЛОГІКА
+    # Ініціалізуємо профіль
     user_states[user.id] = States.PROFILE_AGE
     user_profiles[user.id] = {}
     
     # Очищаємо попередні дані
     context.user_data.pop('profile_data', None)
+    
+    logger.info(f"🔧 [PROFILE START] Користувач {user.id} почав створення профілю")
     
     update.message.reply_text(
         "📝 *Створення профілю*\n\nВведіть ваш вік (18-100):",
@@ -48,6 +50,7 @@ def handle_profile_message(update: Update, context: CallbackContext):
     # Перевіряємо чи існує профіль для користувача
     if user.id not in user_profiles:
         user_profiles[user.id] = {}
+        logger.info(f"🔧 [PROFILE] Створено новий тимчасовий профіль для {user.id}")
 
     if state == States.PROFILE_AGE:
         try:
@@ -58,6 +61,8 @@ def handle_profile_message(update: Update, context: CallbackContext):
             
             user_profiles[user.id]['age'] = age
             user_states[user.id] = States.PROFILE_GENDER
+            
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} встановив вік: {age}")
             
             keyboard = [[KeyboardButton("👨"), KeyboardButton("👩")], [KeyboardButton("🔙 Скасувати")]]
             update.message.reply_text(
@@ -71,6 +76,7 @@ def handle_profile_message(update: Update, context: CallbackContext):
         if text == "👨":
             user_profiles[user.id]['gender'] = 'male'
             user_states[user.id] = States.PROFILE_CITY
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} обрав стать: male")
             update.message.reply_text(
                 "✅ Стать: 👨 Чоловік\n\nВведіть ваше місто:",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
@@ -78,6 +84,7 @@ def handle_profile_message(update: Update, context: CallbackContext):
         elif text == "👩":
             user_profiles[user.id]['gender'] = 'female'
             user_states[user.id] = States.PROFILE_CITY
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} обрав стать: female")
             update.message.reply_text(
                 "✅ Стать: 👩 Жінка\n\nВведіть ваше місто:",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
@@ -89,6 +96,8 @@ def handle_profile_message(update: Update, context: CallbackContext):
         if len(text) >= 2:
             user_profiles[user.id]['city'] = text
             user_states[user.id] = States.PROFILE_SEEKING_GENDER
+            
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} встановив місто: {text}")
             
             keyboard = [
                 [KeyboardButton("👩 Дівчину"), KeyboardButton("👨 Хлопця")],
@@ -106,12 +115,15 @@ def handle_profile_message(update: Update, context: CallbackContext):
         if text == "👩 Дівчину":
             user_profiles[user.id]['seeking_gender'] = 'female'
             user_states[user.id] = States.PROFILE_GOAL
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} шукає: female")
         elif text == "👨 Хлопця":
             user_profiles[user.id]['seeking_gender'] = 'male'
             user_states[user.id] = States.PROFILE_GOAL
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} шукає: male")
         elif text == "👫 Всіх":
             user_profiles[user.id]['seeking_gender'] = 'all'
             user_states[user.id] = States.PROFILE_GOAL
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} шукає: all")
         else:
             update.message.reply_text("❌ Оберіть варіант з кнопок")
             return
@@ -144,6 +156,9 @@ def handle_profile_message(update: Update, context: CallbackContext):
         if text in goal_map:
             user_profiles[user.id]['goal'] = goal_map[text]
             user_states[user.id] = States.PROFILE_BIO
+            
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} обрав ціль: {goal_map[text]}")
+            
             update.message.reply_text(
                 f"✅ Ціль: {text}\n\nНапишіть про себе (мінімум 10 символів):",
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
@@ -154,6 +169,9 @@ def handle_profile_message(update: Update, context: CallbackContext):
     elif state == States.PROFILE_BIO:
         if len(text) >= 10:
             user_profiles[user.id]['bio'] = text
+            
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} заповнив біо")
+            logger.info(f"🔧 [PROFILE DATA] Повні дані профілю: {user_profiles[user.id]}")
             
             # Зберігаємо профіль
             success = db.update_user_profile(
@@ -168,6 +186,11 @@ def handle_profile_message(update: Update, context: CallbackContext):
             
             if success:
                 user_states[user.id] = States.ADD_MAIN_PHOTO
+                
+                # Перевіряємо збережені дані
+                saved_user = db.get_user(user.id)
+                logger.info(f"🔧 [PROFILE SAVED] Збережені дані: {saved_user}")
+                
                 update.message.reply_text(
                     "🎉 *Профіль створено!*\n\nТепер додайте фото для профілю (максимум 3 фото):",
                     reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
@@ -184,6 +207,8 @@ def handle_main_photo(update: Update, context: CallbackContext):
     
     if user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.photo:
         photo = update.message.photo[-1]
+        
+        logger.info(f"🔧 [PHOTO] Користувач {user.id} додає фото")
         
         # Додаємо фото
         success = db.add_profile_photo(user.id, photo.file_id)
@@ -227,6 +252,9 @@ def show_my_profile(update: Update, context: CallbackContext):
         return
     
     photos = db.get_profile_photos(user.id)
+    
+    # Детальне логування для дебагу
+    logger.info(f"🔧 [SHOW PROFILE] Дані користувача {user.id}: {user_data}")
     
     # Форматування профілю
     gender_display = "👨 Чоловік" if user_data['gender'] == 'male' else "👩 Жінка"
