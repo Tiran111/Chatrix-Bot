@@ -10,13 +10,13 @@ from telegram.ext import (
 )
 from telegram.error import Conflict, TelegramError
 
-# Імпорт ваших модулів (переконайтеся, що вони сумісні з новою версією)
+# Імпорт ваших модулів
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import TOKEN, ADMIN_ID
 
-# Імпорт обробників (потрібно буде також оновити їх)
+# Імпорт обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 from handlers.admin import show_admin_panel, handle_admin_actions, show_users_management, show_users_list, start_broadcast, update_database, show_ban_management, show_banned_users, show_detailed_stats, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
@@ -439,11 +439,10 @@ async def start_telegram_bot():
             
             logger.info("✅ Бот запущено!")
             
-            # Запускаємо polling
+            # Запускаємо polling (видалено read_latency)
             await application.run_polling(
                 drop_pending_updates=True,
-                timeout=10,
-                read_latency=2.0
+                timeout=10
             )
             
             break
