@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -35,6 +36,18 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальна змінна для бота
 application = None
+event_loop = None
+
+def run_async_tasks():
+    """Запуск асинхронних завдань в окремому потоці"""
+    global event_loop
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    event_loop.run_forever()
+
+# Запускаємо event loop в окремому потоці при старті
+async_thread = threading.Thread(target=run_async_tasks, daemon=True)
+async_thread.start()
 
 def setup_handlers(app_instance):
     """Налаштування обробників"""
@@ -334,6 +347,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
+async def process_update(update):
+    """Обробка оновлення"""
+    try:
+        await application.process_update(update)
+        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
+
 def init_bot():
     """Ініціалізація бота"""
     global application
@@ -348,6 +369,11 @@ def init_bot():
         # Налаштовуємо обробники
         setup_handlers(application)
         logger.info("✅ Обробники налаштовано")
+        
+        # Встановлюємо webhook через event loop
+        future = asyncio.run_coroutine_threadsafe(application.bot.set_webhook(WEBHOOK_URL), event_loop)
+        future.result(timeout=30)
+        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
         logger.info("🤖 Бот успішно ініціалізовано!")
         
@@ -391,16 +417,8 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Обробляємо оновлення синхронно
-        async def process_update():
-            try:
-                await application.process_update(update)
-                logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
-            except Exception as e:
-                logger.error(f"❌ Помилка обробки оновлення: {e}")
-        
-        # Запускаємо обробку
-        asyncio.create_task(process_update())
+        # Обробляємо оновлення через event loop
+        asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
@@ -416,20 +434,18 @@ def set_webhook_route():
     try:
         if application is None:
             init_bot()
+            return "✅ Бот ініціалізовано! Webhook вже встановлено."
         
-        # Використовуємо вбудований метод для встановлення webhook
-        async def set_webhook_async():
-            await application.bot.set_webhook(WEBHOOK_URL)
-            webhook_info = await application.bot.get_webhook_info()
-            return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        # Перевіряємо стан webhook
+        future = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
+        webhook_info = future.result(timeout=30)
         
-        # Запускаємо в окремому event loop
-        result = asyncio.run(set_webhook_async())
-        logger.info(f"✅ Результат встановлення webhook: {result}")
+        result = f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        logger.info(f"✅ Результат перевірки webhook: {result}")
         return result
         
     except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
+        logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 # ========== ЗАПУСК СЕРВЕРА ==========
