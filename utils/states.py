@@ -11,18 +11,22 @@ class States(Enum):
     ADD_MAIN_PHOTO = 7
     ADD_PHOTO = 8
     VIEW_USER_GALLERY = 9
-    ADVANCED_SEARCH_GENDER = 10
-    ADVANCED_SEARCH_CITY = 11
-    ADVANCED_SEARCH_CITY_INPUT = 12
-    ADVANCED_SEARCH_GOAL = 13
-    ADMIN_SEARCH_USER = 14
-    ADMIN_BAN_USER = 15
-    ADMIN_UNBAN_USER = 16
-    ADMIN_SEND_MESSAGE = 17
-    BROADCAST = 18
-    CONTACT_ADMIN = 19  # НОВИЙ СТАН для зв'язку з адміном
+    CONTACT_ADMIN = 10
+    SEND_MESSAGE = 11
+    
+    # Адмін стани
+    ADMIN_BAN_USER = 100
+    ADMIN_UNBAN_USER = 101
+    BROADCAST = 102
+    ADMIN_SEARCH_USER = 103
+    
+    # Розширений пошук
+    ADVANCED_SEARCH_GENDER = 200
+    ADVANCED_SEARCH_CITY = 201
+    ADVANCED_SEARCH_CITY_INPUT = 202
+    ADVANCED_SEARCH_GOAL = 203
 
-# Словники для зберігання станів та профілів
+# Словники для зберігання станів користувачів
 user_states = {}
 user_profiles = {}
 gallery_view_data = {}

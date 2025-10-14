@@ -1,4 +1,4 @@
-﻿from telegram import Update
+﻿from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.models import db
 from keyboards.main_menu import get_main_menu
@@ -53,10 +53,13 @@ class NotificationSystem:
                 
                 # Сповіщаємо першому користувачу
                 if user2_username:
-                    keyboard1 = [[{"text": "💬 Написати в Telegram", "url": f"https://t.me/{user2_username}"}]]
+                    keyboard1 = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user2_username}")]
+                    ])
                     await context.bot.send_message(
                         chat_id=user1_id,
                         text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
+                        reply_markup=keyboard1,
                         parse_mode='Markdown'
                     )
                 else:
@@ -68,10 +71,13 @@ class NotificationSystem:
                 
                 # Сповіщаємо другому користувачу
                 if user1_username:
-                    keyboard2 = [[{"text": "💬 Написати в Telegram", "url": f"https://t.me/{user1_username}"}]]
+                    keyboard2 = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user1_username}")]
+                    ])
                     await context.bot.send_message(
                         chat_id=user2_id,
                         text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
+                        reply_markup=keyboard2,
                         parse_mode='Markdown'
                     )
                 else:
@@ -118,6 +124,25 @@ class NotificationSystem:
             )
         except Exception as e:
             logger.error(f"❌ Помилка сповіщення про розсилку: {e}")
+    
+    async def notify_broadcast_complete(self, context: ContextTypes.DEFAULT_TYPE, admin_id, success_count, total_count):
+        """Сповістити адміна про завершення розсилки"""
+        try:
+            message = (
+                f"📢 *Розсилка завершена*\n\n"
+                f"✅ Успішно: {success_count}\n"
+                f"❌ Не вдалося: {total_count - success_count}\n"
+                f"📊 Всього: {total_count}"
+            )
+            
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            logger.info(f"✅ Сповіщення про розсилку відправлено адміну {admin_id}")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки сповіщення про розсилку: {e}")
     
     async def notify_rating_update(self, context: ContextTypes.DEFAULT_TYPE, user_id):
         """Сповіщення про зміну рейтингу"""

@@ -193,6 +193,57 @@ async def start_broadcast(update: Update, context: CallbackContext):
     )
     user_states[user.id] = States.BROADCAST
 
+async def handle_broadcast_message(update: Update, context: CallbackContext):
+    """Обробка повідомлення для розсилки з сповіщенням"""
+    user = update.effective_user
+    if user.id != ADMIN_ID or user_states.get(user.id) != States.BROADCAST:
+        return
+    
+    message_text = update.message.text
+    
+    if message_text == "🔙 Скасувати":
+        user_states[user.id] = States.START
+        await update.message.reply_text("❌ Розсилка скасована")
+        return
+    
+    users = db.get_all_users()
+    
+    if not users:
+        await update.message.reply_text("❌ Немає користувачів для розсилки")
+        user_states[user.id] = States.START
+        return
+    
+    await update.message.reply_text(f"🔄 Розсилка повідомлення {len(users)} користувачам...")
+    
+    success_count = 0
+    fail_count = 0
+    
+    for user_data in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user_data[1],  # telegram_id
+                text=f"📢 *Повідомлення від адміністратора:*\n\n{message_text}",
+                parse_mode='Markdown'
+            )
+            success_count += 1
+            time.sleep(0.1)  # Затримка щоб не перевищити ліміти
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
+            fail_count += 1
+    
+    # Сповіщаємо адміна про результат
+    await update.message.reply_text(
+        f"📊 *Результат розсилки:*\n\n"
+        f"✅ Відправлено: {success_count}\n"
+        f"❌ Не вдалося: {fail_count}",
+        parse_mode='Markdown'
+    )
+    
+    # Відправляємо сповіщення про успішну розсилку
+    await notification_system.notify_broadcast_complete(context, user.id, success_count, len(users))
+    
+    user_states[user.id] = States.START
+
 async def update_database(update: Update, context: CallbackContext):
     """Оновлення бази даних"""
     user = update.effective_user
@@ -271,57 +322,6 @@ async def show_detailed_stats(update: Update, context: CallbackContext):
             stats_text += f"\n• {goal}: {count} ({percentage:.1f}%)"
     
     await update.message.reply_text(stats_text, parse_mode='Markdown')
-
-async def handle_broadcast_message(update: Update, context: CallbackContext):
-    """Обробка повідомлення для розсилки з сповіщенням"""
-    user = update.effective_user
-    if user.id != ADMIN_ID or user_states.get(user.id) != States.BROADCAST:
-        return
-    
-    message_text = update.message.text
-    
-    if message_text == "🔙 Скасувати":
-        user_states[user.id] = States.START
-        await update.message.reply_text("❌ Розсилка скасована")
-        return
-    
-    users = db.get_all_users()
-    
-    if not users:
-        await update.message.reply_text("❌ Немає користувачів для розсилки")
-        user_states[user.id] = States.START
-        return
-    
-    await update.message.reply_text(f"🔄 Розсилка повідомлення {len(users)} користувачам...")
-    
-    success_count = 0
-    fail_count = 0
-    
-    for user_data in users:
-        try:
-            await context.bot.send_message(
-                chat_id=user_data[1],  # telegram_id
-                text=f"📢 *Повідомлення від адміністратора:*\n\n{message_text}",
-                parse_mode='Markdown'
-            )
-            success_count += 1
-            time.sleep(0.1)  # Затримка щоб не перевищити ліміти
-        except Exception as e:
-            logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
-            fail_count += 1
-    
-    # Сповіщаємо адміна про результат
-    await update.message.reply_text(
-        f"📊 *Результат розсилки:*\n\n"
-        f"✅ Відправлено: {success_count}\n"
-        f"❌ Не вдалося: {fail_count}",
-        parse_mode='Markdown'
-    )
-    
-    # Відправляємо сповіщення про успішну розсилку
-    await notification_system.notify_broadcast_sent(context, user.id)
-    
-    user_states[user.id] = States.START
 
 async def start_ban_user(update: Update, context: CallbackContext):
     """Початок блокування користувача"""

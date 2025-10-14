@@ -4,7 +4,7 @@ import asyncio
 import threading
 import time
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 # Імпорт ваших модулів
@@ -78,8 +78,9 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
-    # Callback обробники - використовуємо універсальний обробник для like_back
+    # Callback обробники
     app_instance.add_handler(CallbackQueryHandler(universal_callback_handler, pattern='^like_back_'))
+    app_instance.add_handler(CallbackQueryHandler(universal_callback_handler, pattern='^message_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -101,6 +102,11 @@ async def universal_callback_handler(update: Update, context: ContextTypes.DEFAU
         if callback_data.startswith('like_back_'):
             user_id = int(callback_data.split('_')[2])
             await handle_like_back(update, context, user_id)
+        
+        # Обробка message callback
+        elif callback_data.startswith('message_'):
+            user_id = int(callback_data.split('_')[1])
+            await start_message_to_user(update, context, user_id)
             
     except Exception as e:
         logger.error(f"❌ Помилка в universal_callback_handler: {e}")
@@ -114,22 +120,31 @@ async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE, u
         # Додаємо лайк в базу
         db.add_like(current_user_id, user_id)
         
+        # Отримуємо інформацію про користувачів
+        current_user_profile = db.get_user_profile(current_user_id)[0]
+        target_user_profile = db.get_user_profile(user_id)[0]
+        
         # Перевіряємо чи це взаємний лайк
         if db.has_like(user_id, current_user_id):
             # Це матч!
-            match_text = "🎉 У вас новий матч! Обидві сторони поставили лайки один одному."
+            match_text = "🎉 У вас новий матч!"
             
             # Сповіщаємо поточного користувача
             await query.edit_message_text(
-                f"{match_text}\n\n💞 Тепер ви можете спілкуватися!",
-                reply_markup=None
+                f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user_profile['name']}!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{user_id}")]
+                ])
             )
             
             # Сповіщаємо іншого користувача
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text=f"🎉 У вас новий матч з користувачем! Перевіть свої матчі в меню."
+                    text=f"🎉 У вас новий матч з {current_user_profile['name']}!",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{current_user_id}")]
+                    ])
                 )
             except Exception as e:
                 logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
@@ -140,12 +155,94 @@ async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE, u
                 reply_markup=None
             )
             
+            # Сповіщаємо користувача про лайк
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"❤️ Вас лайкнув(ла) {current_user_profile['name']}! Перевірте хто вас лайкнув у меню."
+                )
+            except Exception as e:
+                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
+            
     except Exception as e:
         logger.error(f"❌ Помилка в handle_like_back: {e}")
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
             pass
+
+async def start_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Початок написання повідомлення користувачу"""
+    try:
+        query = update.callback_query
+        current_user_id = query.from_user.id
+        
+        # Зберігаємо дані для повідомлення
+        context.user_data['message_to_user'] = user_id
+        user_states[current_user_id] = States.SEND_MESSAGE
+        
+        # Отримуємо інформацію про користувача
+        user_profile = db.get_user_profile(user_id)[0]
+        
+        await query.edit_message_text(
+            f"💌 Напишіть повідомлення для {user_profile['name']}:\n\n"
+            f"✏️ Ваше повідомлення буде відправлено анонімно. Користувач зможе відповісти вам через бота.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Скасувати", callback_data="cancel_message")]
+            ])
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в start_message_to_user: {e}")
+        await update.callback_query.edit_message_text("❌ Сталася помилка.")
+
+async def send_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Відправка повідомлення користувачу"""
+    try:
+        user = update.effective_user
+        message_text = update.message.text
+        
+        if 'message_to_user' not in context.user_data:
+            await update.message.reply_text("❌ Помилка. Спробуйте ще раз.")
+            return
+        
+        target_user_id = context.user_data['message_to_user']
+        
+        # Отримуємо інформацію про користувачів
+        current_user_profile = db.get_user_profile(user.id)[0]
+        target_user_profile = db.get_user_profile(target_user_id)[0]
+        
+        # Відправляємо повідомлення цільовому користувачу
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"💌 Ви отримали повідомлення від {current_user_profile['name']}:\n\n"
+                     f"_{message_text}_\n\n"
+                     f"💬 Щоб відповісти, використовуйте кнопку нижче:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💌 Відповісти", callback_data=f"message_{user.id}")]
+                ]),
+                parse_mode='Markdown'
+            )
+            
+            await update.message.reply_text(
+                "✅ Повідомлення відправлено!",
+                reply_markup=get_main_menu(user.id)
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Не вдалося відправити повідомлення. Користувач може бути заблокований або видалений.",
+                reply_markup=get_main_menu(user.id)
+            )
+        
+        # Очищаємо стан
+        user_states[user.id] = States.START
+        context.user_data.pop('message_to_user', None)
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в send_user_message: {e}")
+        await update.message.reply_text("❌ Сталася помилка.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -268,6 +365,11 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Зв'язок з адміном
         if state == States.CONTACT_ADMIN:
             await handle_contact_message(update, context)
+            return
+
+        # Відправка повідомлення користувачу
+        if state == States.SEND_MESSAGE:
+            await send_user_message(update, context)
             return
 
         # Додавання фото

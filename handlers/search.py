@@ -151,17 +151,24 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
     
     main_photo = db.get_main_photo(telegram_id)
     
+    # Додаємо кнопку для написання повідомлення
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{telegram_id}")],
+        [InlineKeyboardButton("❤️ Лайк", callback_data=f"like_{telegram_id}")],
+        [InlineKeyboardButton("➡️ Далі", callback_data="next_profile")]
+    ])
+    
     if main_photo:
         await update.message.reply_photo(
             photo=main_photo, 
             caption=profile_text,
-            reply_markup=get_search_navigation(),
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
     else:
         await update.message.reply_text(
             profile_text,
-            reply_markup=get_search_navigation(),
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
 
@@ -411,70 +418,65 @@ async def show_likes(update: Update, context: CallbackContext):
             parse_mode='Markdown'
         )
 
-async def handle_like_back_callback(update: Update, context: CallbackContext):
-    """Обробка взаємного лайку зі списку лайків через callback"""
-    query = update.callback_query
-    await query.answer()
-    
-    user = query.from_user
-    liked_user_id = int(query.data.split('_')[2])
-    
-    # Перевіряємо чи користувач заблокований
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await query.edit_message_caption(
-            caption=query.message.caption + "\n\n🚫 Ваш акаунт заблоковано.",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Додаємо лайк з перевіркою обмежень
-    success, message = db.add_like(user.id, liked_user_id)
-    
-    if success:
-        # Перевіряємо чи це взаємний лайк (матч)
-        is_mutual = db.has_liked(liked_user_id, user.id)
+async def handle_like_back(update: Update, context: CallbackContext, user_id: int):
+    """Обробка взаємного лайку зі списку лайків"""
+    try:
+        query = update.callback_query
+        current_user_id = query.from_user.id
         
-        if is_mutual:
-            # Відправляємо сповіщення про матч
-            await notification_system.notify_new_match(context, user.id, liked_user_id)
+        # Додаємо лайк в базу
+        db.add_like(current_user_id, user_id)
+        
+        # Отримуємо інформацію про користувачів
+        current_user_profile = db.get_user_profile(current_user_id)[0]
+        target_user_profile = db.get_user_profile(user_id)[0]
+        
+        # Перевіряємо чи це взаємний лайк
+        if db.has_like(user_id, current_user_id):
+            # Це матч!
+            match_text = "🎉 У вас новий матч!"
             
-            # Отримуємо дані користувача для кнопки переходу в Telegram
-            matched_user = db.get_user(liked_user_id)
-            if matched_user:
-                username = matched_user.get('username')
-                if username:
-                    # Створюємо кнопку для переходу в Telegram
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
-                    ])
-                    await query.edit_message_caption(
-                        caption=query.message.caption + "\n\n💕 *Ви створили матч! Тепер ви можете спілкуватися!*",
-                        reply_markup=keyboard,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await query.edit_message_caption(
-                        caption=query.message.caption + "\n\n💕 *Ви створили матч!*\n\nℹ️ *У цього користувача немає username*",
-                        parse_mode='Markdown'
-                    )
-            else:
-                await query.edit_message_caption(
-                    caption=query.message.caption + "\n\n💕 *Ви створили матч!*",
-                    parse_mode='Markdown'
-                )
-        else:
-            # Відправляємо сповіщення про лайк
-            await notification_system.notify_new_like(context, user.id, liked_user_id)
-            await query.edit_message_caption(
-                caption=query.message.caption + f"\n\n❤️ {message}",
-                parse_mode='Markdown'
+            # Сповіщаємо поточного користувача
+            await query.edit_message_text(
+                f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user_profile['name']}!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{user_id}")]
+                ])
             )
-    else:
-        await query.edit_message_caption(
-            caption=query.message.caption + f"\n\n❌ {message}",
-            parse_mode='Markdown'
-        )
+            
+            # Сповіщаємо іншого користувача
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🎉 У вас новий матч з {current_user_profile['name']}!",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{current_user_id}")]
+                    ])
+                )
+            except Exception as e:
+                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
+        else:
+            # Просто лайк
+            await query.edit_message_text(
+                "❤️ Ви відправили лайк! Очікуйте на взаємність.",
+                reply_markup=None
+            )
+            
+            # Сповіщаємо користувача про лайк
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"❤️ Вас лайкнув(ла) {current_user_profile['name']}! Перевірте хто вас лайкнув у меню."
+                )
+            except Exception as e:
+                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка в handle_like_back: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
+        except:
+            pass
 
 async def handle_top_selection(update: Update, context: CallbackContext):
     """Обробка вибору топу"""
