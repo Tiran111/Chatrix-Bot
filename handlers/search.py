@@ -1,5 +1,5 @@
-from telegram.ext import CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import CallbackContext
 from database.models import db
 from keyboards.main_menu import get_main_menu
 from keyboards.search_keyboards import get_search_navigation
@@ -57,31 +57,31 @@ def format_profile_text(user_data, title=""):
         logger.error(f"❌ Помилка форматування профілю: {e}")
         return f"❌ Помилка завантаження профілю"
 
-def search_profiles(update: Update, context: CallbackContext):
+async def search_profiles(update: Update, context: CallbackContext):
     """Пошук анкет"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     user_data, is_complete = db.get_user_profile(user.id)
     
     if not is_complete:
-        update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
         return
     
     # Перевіряємо чи є фото
     if not db.get_main_photo(user.id):
-        update.message.reply_text(
+        await update.message.reply_text(
             "❌ Додайте головне фото до профілю, щоб шукати анкети!",
             reply_markup=get_main_menu(user.id)
         )
         return
     
-    update.message.reply_text("🔍 Шукаю анкети...")
+    await update.message.reply_text("🔍 Шукаю анкети...")
     
     # ДЕТАЛЬНА ВІДЛАДКА ПОШУКУ
     logger.info(f"🔍 [SEARCH] Пошук для користувача {user.id}")
@@ -95,13 +95,13 @@ def search_profiles(update: Update, context: CallbackContext):
         # Додаємо запис про перегляд профілю
         db.add_profile_view(user.id, random_user[1])
         
-        show_user_profile(update, context, random_user, "💕 Знайдені анкети")
+        await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
         context.user_data['search_users'] = [random_user]
         context.user_data['current_index'] = 0
         context.user_data['search_type'] = 'random'
     else:
         logger.info(f"🔍 [SEARCH] Анкет не знайдено для користувача {user.id}")
-        update.message.reply_text(
+        await update.message.reply_text(
             "😔 Наразі немає анкет для перегляду\n\n"
             "💡 *Можливі причини:*\n"
             "• Не залишилося анкет за вашими критеріями\n"
@@ -110,33 +110,33 @@ def search_profiles(update: Update, context: CallbackContext):
             reply_markup=get_main_menu(user.id)
         )
 
-def search_by_city(update: Update, context: CallbackContext):
+async def search_by_city(update: Update, context: CallbackContext):
     """Пошук за містом"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     user_data, is_complete = db.get_user_profile(user.id)
     
     if not is_complete:
-        update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
         return
     
     context.user_data['waiting_for_city'] = True
-    update.message.reply_text("🏙️ Введіть назву міста для пошуку:")
+    await update.message.reply_text("🏙️ Введіть назву міста для пошуку:")
 
-def show_user_profile(update: Update, context: CallbackContext, user_data, title=""):
+async def show_user_profile(update: Update, context: CallbackContext, user_data, title=""):
     """Показати профіль користувача"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     current_user_data = db.get_user(user.id)
     if current_user_data and current_user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     profile_text = format_profile_text(user_data, title)
@@ -151,27 +151,27 @@ def show_user_profile(update: Update, context: CallbackContext, user_data, title
     main_photo = db.get_main_photo(telegram_id)
     
     if main_photo:
-        update.message.reply_photo(
+        await update.message.reply_photo(
             photo=main_photo, 
             caption=profile_text,
             reply_markup=get_search_navigation(),
             parse_mode='Markdown'
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             profile_text,
             reply_markup=get_search_navigation(),
             parse_mode='Markdown'
         )
 
-def handle_like(update: Update, context: CallbackContext):
+async def handle_like(update: Update, context: CallbackContext):
     """Обробка лайку з перевіркою обмежень"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     current_profile_id = context.user_data.get('current_profile_id')
@@ -185,22 +185,22 @@ def handle_like(update: Update, context: CallbackContext):
             is_mutual = db.has_liked(current_profile_id, user.id)
             
             if is_mutual:
-                update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
+                await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
             else:
-                update.message.reply_text(f"❤️ {message}")
+                await update.message.reply_text(f"❤️ {message}")
         else:
-            update.message.reply_text(f"❌ {message}")
+            await update.message.reply_text(f"❌ {message}")
     else:
-        update.message.reply_text("❌ Не знайдено профіль для лайку")
+        await update.message.reply_text("❌ Не знайдено профіль для лайку")
 
-def show_next_profile(update: Update, context: CallbackContext):
+async def show_next_profile(update: Update, context: CallbackContext):
     """Наступний профіль"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     search_users = context.user_data.get('search_users', [])
@@ -210,7 +210,7 @@ def show_next_profile(update: Update, context: CallbackContext):
     logger.info(f"🔍 [NEXT] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
     
     if not search_users:
-        search_profiles(update, context)
+        await search_profiles(update, context)
         return
     
     # Якщо це пошук за містом, шукаємо наступного користувача
@@ -223,9 +223,9 @@ def show_next_profile(update: Update, context: CallbackContext):
             # Додаємо запис про перегляд профілю
             db.add_profile_view(user.id, user_data[1])
             
-            show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
+            await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
         else:
-            update.message.reply_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
+            await update.message.reply_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
     else:
         # Для випадкового пошуку - шукаємо нову анкету
         random_user = db.get_random_user(user.id)
@@ -233,11 +233,11 @@ def show_next_profile(update: Update, context: CallbackContext):
             # Додаємо запис про перегляд профілю
             db.add_profile_view(user.id, random_user[1])
             
-            show_user_profile(update, context, random_user, "💕 Знайдені анкети")
+            await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
             context.user_data['search_users'] = [random_user]
             context.user_data['current_index'] = 0
         else:
-            update.message.reply_text(
+            await update.message.reply_text(
                 "😔 Більше немає анкет для перегляду\n\n"
                 "💡 Спробуйте:\n"
                 "• Змінити критерії пошуку\n"
@@ -246,14 +246,14 @@ def show_next_profile(update: Update, context: CallbackContext):
                 reply_markup=get_main_menu(user.id)
             )
 
-def show_top_users(update: Update, context: CallbackContext):
+async def show_top_users(update: Update, context: CallbackContext):
     """Показати вибір топу"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     keyboard = [
@@ -261,55 +261,55 @@ def show_top_users(update: Update, context: CallbackContext):
         ['🏆 Загальний топ', '🔙 Меню']
     ]
     
-    update.message.reply_text(
+    await update.message.reply_text(
         "🏆 Оберіть категорію для перегляду топу:",
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
-def show_matches(update: Update, context: CallbackContext):
+async def show_matches(update: Update, context: CallbackContext):
     """Мої матчі"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     matches = db.get_user_matches(user.id)
     
     if matches:
-        update.message.reply_text(f"💌 *Ваші матчі ({len(matches)}):*", parse_mode='Markdown')
+        await update.message.reply_text(f"💌 *Ваші матчі ({len(matches)}):*", parse_mode='Markdown')
         for match in matches:
             profile_text = format_profile_text(match, "💕 МАТЧ!")
             main_photo = db.get_main_photo(match[1])
             
             if main_photo:
-                update.message.reply_photo(
+                await update.message.reply_photo(
                     photo=main_photo,
                     caption=profile_text,
                     parse_mode='Markdown'
                 )
             else:
-                update.message.reply_text(profile_text, parse_mode='Markdown')
+                await update.message.reply_text(profile_text, parse_mode='Markdown')
     else:
-        update.message.reply_text("😔 У вас ще немає матчів", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text("😔 У вас ще немає матчів", reply_markup=get_main_menu(user.id))
 
-def show_likes(update: Update, context: CallbackContext):
+async def show_likes(update: Update, context: CallbackContext):
     """Показати хто мене лайкнув"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     # Отримуємо список користувачів, які лайкнули поточного користувача
     likers = db.get_user_likers(user.id)
     
     if likers:
-        update.message.reply_text(f"❤️ *Вас лайкнули ({len(likers)}):*", parse_mode='Markdown')
+        await update.message.reply_text(f"❤️ *Вас лайкнули ({len(likers)}):*", parse_mode='Markdown')
         
         for liker in likers:
             # Перевіряємо чи це взаємний лайк (матч)
@@ -320,29 +320,29 @@ def show_likes(update: Update, context: CallbackContext):
             main_photo = db.get_main_photo(liker[1])
             
             if main_photo:
-                update.message.reply_photo(
+                await update.message.reply_photo(
                     photo=main_photo,
                     caption=profile_text,
                     parse_mode='Markdown'
                 )
             else:
-                update.message.reply_text(profile_text, parse_mode='Markdown')
+                await update.message.reply_text(profile_text, parse_mode='Markdown')
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "😔 Вас ще ніхто не лайкнув\n\n"
             "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
             reply_markup=get_main_menu(user.id),
             parse_mode='Markdown'
         )
 
-def handle_top_selection(update: Update, context: CallbackContext):
+async def handle_top_selection(update: Update, context: CallbackContext):
     """Обробка вибору топу"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
     user_data = db.get_user(user.id)
     if user_data and user_data.get('is_banned'):
-        update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
         return
     
     text = update.message.text
@@ -361,7 +361,7 @@ def handle_top_selection(update: Update, context: CallbackContext):
         logger.info(f"🔍 [TOP] Запит загального топу. Знайдено: {len(top_users)}")
     
     if top_users:
-        update.message.reply_text(f"**{title}** 🏆\n\n*Знайдено анкет: {len(top_users)}*", parse_mode='Markdown')
+        await update.message.reply_text(f"**{title}** 🏆\n\n*Знайдено анкет: {len(top_users)}*", parse_mode='Markdown')
         
         for i, user_data in enumerate(top_users, 1):
             # Отримуємо актуальні дані користувача
@@ -391,25 +391,25 @@ def handle_top_selection(update: Update, context: CallbackContext):
             main_photo = db.get_main_photo(user_data[1])
             
             if main_photo:
-                update.message.reply_photo(
+                await update.message.reply_photo(
                     photo=main_photo,
                     caption=profile_text,
                     parse_mode='Markdown'
                 )
             else:
-                update.message.reply_text(profile_text, parse_mode='Markdown')
+                await update.message.reply_text(profile_text, parse_mode='Markdown')
         
         # Показуємо кнопку для повернення до вибору топу
         keyboard = [
             ['👨 Топ чоловіків', '👩 Топ жінок'],
             ['🏆 Загальний топ', '🔙 Меню']
         ]
-        update.message.reply_text(
+        await update.message.reply_text(
             "🏆 Оберіть іншу категорію або поверніться в меню:",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             f"😔 Ще немає користувачів у {title}\n\n"
             f"💡 *Порада:* Заповніть профіль повністю та додайте фото, щоб потрапити в топ!",
             reply_markup=get_main_menu(user.id)

@@ -42,6 +42,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ["👨‍💼 Зв'язок з адміном"]
         ]
     
+    if user.id == ADMIN_ID:
+        keyboard.append(['👑 Адмін панель'])
+    
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(

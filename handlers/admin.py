@@ -1,5 +1,5 @@
-from telegram.ext import CallbackContext
 from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import CallbackContext
 from database.models import db
 from keyboards.main_menu import get_main_menu, get_admin_menu, get_cancel_keyboard
 from utils.states import user_states, States
@@ -9,11 +9,11 @@ import time
 
 logger = logging.getLogger(__name__)
 
-def show_admin_panel(update: Update, context: CallbackContext):
+async def show_admin_panel(update: Update, context: CallbackContext):
     """Показати адмін панель"""
     user = update.effective_user
     if user.id != ADMIN_ID:
-        update.message.reply_text("❌ Доступ заборонено", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text("❌ Доступ заборонено", reply_markup=get_main_menu(user.id))
         return
     
     stats = db.get_statistics()
@@ -36,10 +36,10 @@ def show_admin_panel(update: Update, context: CallbackContext):
         for goal, count in goals_stats:
             stats_text += f"\n• {goal}: {count}"
     
-    update.message.reply_text(stats_text, parse_mode='Markdown')
-    update.message.reply_text("👑 *Адмін панель*\nОберіть дію:", reply_markup=get_admin_menu(), parse_mode='Markdown')
+    await update.message.reply_text(stats_text, parse_mode='Markdown')
+    await update.message.reply_text("👑 *Адмін панель*\nОберіть дію:", reply_markup=get_admin_menu(), parse_mode='Markdown')
 
-def handle_admin_actions(update: Update, context: CallbackContext):
+async def handle_admin_actions(update: Update, context: CallbackContext):
     """Обробка дій адміністратора"""
     user = update.effective_user
     if user.id != ADMIN_ID:
@@ -50,27 +50,27 @@ def handle_admin_actions(update: Update, context: CallbackContext):
     logger.info(f"🔧 [ADMIN] {user.first_name}: '{text}'")
     
     if text == "👑 Адмін панель" or text == "📊 Статистика":
-        show_admin_panel(update, context)
+        await show_admin_panel(update, context)
     
     elif text == "👥 Користувачі":
-        show_users_management(update, context)
+        await show_users_management(update, context)
     
     elif text == "📢 Розсилка":
-        start_broadcast(update, context)
+        await start_broadcast(update, context)
     
     elif text == "🔄 Оновити базу":
-        update_database(update, context)
+        await update_database(update, context)
     
     elif text == "🚫 Блокування":
-        show_ban_management(update, context)
+        await show_ban_management(update, context)
     
     elif text == "📈 Детальна статистика":
-        show_detailed_stats(update, context)
+        await show_detailed_stats(update, context)
     
     elif text == "🔙 Головне меню":
-        update.message.reply_text("👋 Повертаємось до головного меню", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text("👋 Повертаємось до головного меню", reply_markup=get_main_menu(user.id))
 
-def show_users_management(update: Update, context: CallbackContext):
+async def show_users_management(update: Update, context: CallbackContext):
     """Керування користувачами"""
     user = update.effective_user
     
@@ -88,19 +88,19 @@ def show_users_management(update: Update, context: CallbackContext):
         ["🔙 Назад до адмін-панелі"]
     ]
     
-    update.message.reply_text(
+    await update.message.reply_text(
         users_text, 
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True), 
         parse_mode='Markdown'
     )
 
-def show_users_list(update: Update, context: CallbackContext):
+async def show_users_list(update: Update, context: CallbackContext):
     """Показати список користувачів"""
     user = update.effective_user
     users = db.get_all_active_users(user.id)
     
     if not users:
-        update.message.reply_text("😔 Користувачів не знайдено")
+        await update.message.reply_text("😔 Користувачів не знайдено")
         return
     
     users_text = "📋 *Список користувачів:*\n\n"
@@ -115,9 +115,9 @@ def show_users_list(update: Update, context: CallbackContext):
     if len(users) > 10:
         users_text += f"\n... та ще {len(users) - 10} користувачів"
     
-    update.message.reply_text(users_text, parse_mode='Markdown')
+    await update.message.reply_text(users_text, parse_mode='Markdown')
 
-def start_broadcast(update: Update, context: CallbackContext):
+async def start_broadcast(update: Update, context: CallbackContext):
     """Початок розсилки"""
     user = update.effective_user
     if user.id != ADMIN_ID:
@@ -125,7 +125,7 @@ def start_broadcast(update: Update, context: CallbackContext):
     
     total_users = db.get_users_count()
     
-    update.message.reply_text(
+    await update.message.reply_text(
         f"📢 *Розсилка повідомлень*\n\n"
         f"Кількість одержувачів: {total_users}\n\n"
         f"Введіть повідомлення для розсилки:",
@@ -134,20 +134,20 @@ def start_broadcast(update: Update, context: CallbackContext):
     )
     user_states[user.id] = States.BROADCAST
 
-def update_database(update: Update, context: CallbackContext):
+async def update_database(update: Update, context: CallbackContext):
     """Оновлення бази даних"""
     user = update.effective_user
     if user.id != ADMIN_ID:
         return
     
-    update.message.reply_text("🔄 Оновлення бази даних...")
+    await update.message.reply_text("🔄 Оновлення бази даних...")
     
     # Очищення старих даних
     db.cleanup_old_data()
     
-    update.message.reply_text("✅ База даних оновлена успішно!")
+    await update.message.reply_text("✅ База даних оновлена успішно!")
 
-def show_ban_management(update: Update, context: CallbackContext):
+async def show_ban_management(update: Update, context: CallbackContext):
     """Керування блокуванням"""
     user = update.effective_user
     banned_users = db.get_banned_users()
@@ -163,18 +163,18 @@ def show_ban_management(update: Update, context: CallbackContext):
         ["📋 Список заблокованих", "🔙 Назад до адмін-панелі"]
     ]
     
-    update.message.reply_text(
+    await update.message.reply_text(
         ban_text, 
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True), 
         parse_mode='Markdown'
     )
 
-def show_banned_users(update: Update, context: CallbackContext):
+async def show_banned_users(update: Update, context: CallbackContext):
     """Показати заблокованих користувачів"""
     banned_users = db.get_banned_users()
     
     if not banned_users:
-        update.message.reply_text("😊 Немає заблокованих користувачів")
+        await update.message.reply_text("😊 Немає заблокованих користувачів")
         return
     
     ban_text = "🚫 *Заблоковані користувачі:*\n\n"
@@ -183,9 +183,9 @@ def show_banned_users(update: Update, context: CallbackContext):
         user_name = user_data[3] if len(user_data) > 3 else "Невідомо"
         ban_text += f"{i}. {user_name} (ID: `{user_id}`)\n"
     
-    update.message.reply_text(ban_text, parse_mode='Markdown')
+    await update.message.reply_text(ban_text, parse_mode='Markdown')
 
-def show_detailed_stats(update: Update, context: CallbackContext):
+async def show_detailed_stats(update: Update, context: CallbackContext):
     """Детальна статистика"""
     user = update.effective_user
     if user.id != ADMIN_ID:
@@ -211,9 +211,9 @@ def show_detailed_stats(update: Update, context: CallbackContext):
             percentage = (count/total_active*100) if total_active > 0 else 0
             stats_text += f"\n• {goal}: {count} ({percentage:.1f}%)"
     
-    update.message.reply_text(stats_text, parse_mode='Markdown')
+    await update.message.reply_text(stats_text, parse_mode='Markdown')
 
-def handle_broadcast_message(update: Update, context: CallbackContext):
+async def handle_broadcast_message(update: Update, context: CallbackContext):
     """Обробка повідомлення для розсилки"""
     user = update.effective_user
     if user.id != ADMIN_ID or user_states.get(user.id) != States.BROADCAST:
@@ -223,24 +223,24 @@ def handle_broadcast_message(update: Update, context: CallbackContext):
     
     if message_text == "🔙 Скасувати":
         user_states[user.id] = States.START
-        update.message.reply_text("❌ Розсилка скасована")
+        await update.message.reply_text("❌ Розсилка скасована")
         return
     
     users = db.get_all_users()
     
     if not users:
-        update.message.reply_text("❌ Немає користувачів для розсилки")
+        await update.message.reply_text("❌ Немає користувачів для розсилки")
         user_states[user.id] = States.START
         return
     
-    update.message.reply_text(f"🔄 Розсилка повідомлення {len(users)} користувачам...")
+    await update.message.reply_text(f"🔄 Розсилка повідомлення {len(users)} користувачам...")
     
     success_count = 0
     fail_count = 0
     
     for user_data in users:
         try:
-            context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=user_data[1],  # telegram_id
                 text=f"📢 *Повідомлення від адміністратора:*\n\n{message_text}",
                 parse_mode='Markdown'
@@ -251,7 +251,7 @@ def handle_broadcast_message(update: Update, context: CallbackContext):
             logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
             fail_count += 1
     
-    update.message.reply_text(
+    await update.message.reply_text(
         f"📊 *Результат розсилки:*\n\n"
         f"✅ Відправлено: {success_count}\n"
         f"❌ Не вдалося: {fail_count}",
@@ -259,25 +259,25 @@ def handle_broadcast_message(update: Update, context: CallbackContext):
     )
     user_states[user.id] = States.START
 
-def start_ban_user(update: Update, context: CallbackContext):
+async def start_ban_user(update: Update, context: CallbackContext):
     """Початок блокування користувача"""
     user = update.effective_user
     user_states[user.id] = States.ADMIN_BAN_USER
-    update.message.reply_text(
+    await update.message.reply_text(
         "🚫 Введіть ID користувача для блокування:",
         reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
     )
 
-def start_unban_user(update: Update, context: CallbackContext):
+async def start_unban_user(update: Update, context: CallbackContext):
     """Початок розблокування користувача"""
     user = update.effective_user
     user_states[user.id] = States.ADMIN_UNBAN_USER
-    update.message.reply_text(
+    await update.message.reply_text(
         "✅ Введіть ID користувача для розблокування:",
         reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
     )
 
-def handle_ban_user(update: Update, context: CallbackContext):
+async def handle_ban_user(update: Update, context: CallbackContext):
     """Обробка блокування користувача"""
     user = update.effective_user
     if user.id != ADMIN_ID or user_states.get(user.id) != States.ADMIN_BAN_USER:
@@ -287,21 +287,21 @@ def handle_ban_user(update: Update, context: CallbackContext):
     
     if user_id_text == "🔙 Скасувати":
         user_states[user.id] = States.START
-        update.message.reply_text("❌ Блокування скасовано")
+        await update.message.reply_text("❌ Блокування скасовано")
         return
     
     try:
         user_id = int(user_id_text)
         if db.ban_user(user_id):
-            update.message.reply_text(f"✅ Користувач `{user_id}` заблокований", parse_mode='Markdown')
+            await update.message.reply_text(f"✅ Користувач `{user_id}` заблокований", parse_mode='Markdown')
         else:
-            update.message.reply_text(f"❌ Користувача `{user_id}` не знайдено", parse_mode='Markdown')
+            await update.message.reply_text(f"❌ Користувача `{user_id}` не знайдено", parse_mode='Markdown')
     except ValueError:
-        update.message.reply_text("❌ Введіть коректний ID користувача")
+        await update.message.reply_text("❌ Введіть коректний ID користувача")
     
     user_states[user.id] = States.START
 
-def handle_unban_user(update: Update, context: CallbackContext):
+async def handle_unban_user(update: Update, context: CallbackContext):
     """Обробка розблокування користувача"""
     user = update.effective_user
     if user.id != ADMIN_ID or user_states.get(user.id) != States.ADMIN_UNBAN_USER:
@@ -311,16 +311,16 @@ def handle_unban_user(update: Update, context: CallbackContext):
     
     if user_id_text == "🔙 Скасувати":
         user_states[user.id] = States.START
-        update.message.reply_text("❌ Розблокування скасовано")
+        await update.message.reply_text("❌ Розблокування скасовано")
         return
     
     try:
         user_id = int(user_id_text)
         if db.unban_user(user_id):
-            update.message.reply_text(f"✅ Користувач `{user_id}` розблокований", parse_mode='Markdown')
+            await update.message.reply_text(f"✅ Користувач `{user_id}` розблокований", parse_mode='Markdown')
         else:
-            update.message.reply_text(f"❌ Користувача `{user_id}` не знайдено або вже розблоковано", parse_mode='Markdown')
+            await update.message.reply_text(f"❌ Користувача `{user_id}` не знайдено або вже розблоковано", parse_mode='Markdown')
     except ValueError:
-        update.message.reply_text("❌ Введіть коректний ID користувача")
+        await update.message.reply_text("❌ Введіть коректний ID користувача")
     
     user_states[user.id] = States.START

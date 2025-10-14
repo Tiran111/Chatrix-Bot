@@ -515,7 +515,7 @@ class Database:
             
             self.conn.commit()
             
-            # Перевіряємо чи це взаємний лайк
+            # Перевіряємо чи це взаємний лайк (матч)
             is_mutual = self.has_liked(to_user_id, from_user_id)
             
             if is_mutual:
