@@ -170,7 +170,7 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
             reply_markup=get_main_menu(user.id)
         )
 
-async def handle_like_callback(update: Update, context: CallbackContext):
+async def handle_like(update: Update, context: CallbackContext):
     """Обробка лайку з callback"""
     try:
         query = update.callback_query
@@ -178,6 +178,8 @@ async def handle_like_callback(update: Update, context: CallbackContext):
         
         user = query.from_user
         callback_data = query.data
+        
+        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data}")
         
         # Отримуємо ID користувача з callback_data
         target_user_id = int(callback_data.split('_')[1])
@@ -230,13 +232,15 @@ async def handle_like_callback(update: Update, context: CallbackContext):
         except:
             pass
 
-async def handle_next_profile_callback(update: Update, context: CallbackContext):
+async def handle_next(update: Update, context: CallbackContext):
     """Обробка кнопки 'Далі' з callback"""
     try:
         query = update.callback_query
         await query.answer()
         
         user = query.from_user
+        
+        logger.info(f"🔍 [NEXT CALLBACK] Обробка кнопки 'Далі' для {user.id}")
         
         search_users = context.user_data.get('search_users', [])
         current_index = context.user_data.get('current_index', 0)
@@ -245,6 +249,7 @@ async def handle_next_profile_callback(update: Update, context: CallbackContext)
         logger.info(f"🔍 [NEXT CALLBACK] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
         
         if not search_users:
+            await query.edit_message_text("🔄 Шукаємо нові анкети...")
             await search_profiles(update, context)
             return
         
@@ -465,11 +470,17 @@ async def show_likes(update: Update, context: CallbackContext):
             parse_mode='Markdown'
         )
 
-async def handle_like_back(update: Update, context: CallbackContext, user_id: int):
+async def handle_like_back(update: Update, context: CallbackContext):
     """Обробка взаємного лайку зі списку лайків"""
     try:
         query = update.callback_query
+        await query.answer()
+        
+        callback_data = query.data
         current_user_id = query.from_user.id
+        
+        # Отримуємо ID користувача з callback_data
+        user_id = int(callback_data.split('_')[2])
         
         success, message = db.add_like(current_user_id, user_id)
         
