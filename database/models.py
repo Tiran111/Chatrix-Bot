@@ -30,7 +30,7 @@ class Database:
                 age INTEGER,
                 gender TEXT,
                 city TEXT,
-                seeking_gender TEXT,
+                seeking_gender TEXT DEFAULT 'all',
                 goal TEXT,
                 bio TEXT,
                 has_photo BOOLEAN DEFAULT FALSE,
@@ -108,6 +108,7 @@ class Database:
             
             changes_made = False
             
+            # Перевіряємо та додаємо відсутні стовпці
             if 'first_name' not in columns:
                 logger.info("➕ Додаємо стовпець first_name...")
                 self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
@@ -133,6 +134,11 @@ class Database:
                 self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
                 changes_made = True
             
+            if 'seeking_gender' not in columns:
+                logger.info("➕ Додаємо стовпець seeking_gender...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN seeking_gender TEXT DEFAULT "all"')
+                changes_made = True
+            
             if changes_made:
                 self.conn.commit()
                 logger.info("✅ Структура бази даних оновлена")
@@ -152,6 +158,7 @@ class Database:
             self.cursor.execute('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL')
             self.cursor.execute('UPDATE users SET rating = 5.0 WHERE rating IS NULL')
             self.cursor.execute('UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL')
+            self.cursor.execute('UPDATE users SET seeking_gender = "all" WHERE seeking_gender IS NULL')
             
             self.conn.commit()
             logger.info("✅ Значення для нових стовпців ініціалізовані")
@@ -186,12 +193,11 @@ class Database:
             return None
     
     def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Оновлення профілю користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
+        """Оновлення профілю користувача"""
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
             logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
             
-            # ВИПРАВЛЕНА ВЕРСІЯ - правильно оновлюємо всі поля
             self.cursor.execute('''
                 UPDATE users 
                 SET age = ?, gender = ?, city = ?, seeking_gender = ?, goal = ?, bio = ?, last_active = CURRENT_TIMESTAMP
