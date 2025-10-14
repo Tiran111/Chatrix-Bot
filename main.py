@@ -38,131 +38,6 @@ PORT = int(os.environ.get('PORT', 10000))
 application = None
 event_loop = None
 
-def init_bot():
-    """Ініціалізація бота при старті сервера"""
-    global application, event_loop
-    
-    try:
-        logger.info("🚀 Ініціалізація бота при старті сервера...")
-        
-        # Створюємо event loop
-        event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(event_loop)
-        
-        # Створюємо бота
-        application = Application.builder().token(TOKEN).build()
-        logger.info("✅ Application створено")
-        
-        # Налаштовуємо обробники
-        setup_handlers(application)
-        logger.info("✅ Обробники налаштовано")
-        
-        # Встановлюємо webhook
-        event_loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
-        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
-        
-        # Запускаємо event loop в окремому потоці
-        def run_event_loop():
-            event_loop.run_forever()
-        
-        loop_thread = threading.Thread(target=run_event_loop, daemon=True)
-        loop_thread.start()
-        logger.info("✅ Event loop запущено")
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
-
-# Ініціалізуємо бота при імпорті модуля
-init_bot()
-
-@app.route('/')
-def home():
-    return "🤖 Chatrix Bot is running!"
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-@app.route('/healthz')
-def healthz():
-    return "OK", 200
-
-@app.route('/ping')
-def ping():
-    return "pong", 200
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook для Telegram"""
-    try:
-        logger.info("📨 Отримано webhook запит від Telegram")
-        
-        if application is None:
-            logger.error("❌ Бот не ініціалізований")
-            return "Bot not initialized", 500
-            
-        # Отримуємо оновлення від Telegram
-        update_data = request.get_json()
-        
-        if update_data is None:
-            logger.error("❌ Порожні дані оновлення")
-            return "Empty update data", 400
-            
-        update = Update.de_json(update_data, application.bot)
-        
-        # Додаємо оновлення в чергу через event loop
-        asyncio.run_coroutine_threadsafe(
-            process_update(update), 
-            event_loop
-        )
-        logger.info("✅ Оновлення успішно додано в чергу обробки")
-        
-        return 'ok'
-        
-    except Exception as e:
-        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
-        return "Error", 500
-
-async def process_update(update):
-    """Обробка оновлення"""
-    try:
-        await application.process_update(update)
-        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки оновлення: {e}")
-
-@app.route('/set_webhook')
-def set_webhook_route():
-    """Встановити webhook через HTTP запит"""
-    logger.info("🔄 Запит на встановлення webhook")
-    try:
-        if application and event_loop:
-            # Використовуємо існуючий event loop
-            future = asyncio.run_coroutine_threadsafe(set_webhook(), event_loop)
-            result = future.result(timeout=30)
-            logger.info(f"✅ Результат встановлення webhook: {result}")
-            return result
-        else:
-            return "❌ Бот не ініціалізований"
-    except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
-        return f"❌ Помилка: {e}"
-
-async def set_webhook():
-    """Асинхронна функція для встановлення webhook"""
-    try:
-        await application.bot.set_webhook(WEBHOOK_URL)
-        
-        # Перевіряємо webhook
-        webhook_info = await application.bot.get_webhook_info()
-        logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
-        
-        return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
-        return f"❌ Помилка: {e}"
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
     try:
@@ -459,6 +334,131 @@ def setup_handlers(application):
     # Обробник помилок
     application.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
+
+async def process_update(update):
+    """Обробка оновлення"""
+    try:
+        await application.process_update(update)
+        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
+
+def init_bot():
+    """Ініціалізація бота при старті сервера"""
+    global application, event_loop
+    
+    try:
+        logger.info("🚀 Ініціалізація бота при старті сервера...")
+        
+        # Створюємо event loop
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
+        
+        # Створюємо бота
+        application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        logger.info("✅ Обробники налаштовано")
+        
+        # Встановлюємо webhook
+        event_loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
+        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
+        
+        # Запускаємо event loop в окремому потоці
+        def run_event_loop():
+            event_loop.run_forever()
+        
+        loop_thread = threading.Thread(target=run_event_loop, daemon=True)
+        loop_thread.start()
+        logger.info("✅ Event loop запущено")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+
+# Ініціалізуємо бота при імпорті модуля
+init_bot()
+
+@app.route('/')
+def home():
+    return "🤖 Chatrix Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+@app.route('/healthz')
+def healthz():
+    return "OK", 200
+
+@app.route('/ping')
+def ping():
+    return "pong", 200
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook для Telegram"""
+    try:
+        logger.info("📨 Отримано webhook запит від Telegram")
+        
+        if application is None:
+            logger.error("❌ Бот не ініціалізований")
+            return "Bot not initialized", 500
+            
+        # Отримуємо оновлення від Telegram
+        update_data = request.get_json()
+        
+        if update_data is None:
+            logger.error("❌ Порожні дані оновлення")
+            return "Empty update data", 400
+            
+        update = Update.de_json(update_data, application.bot)
+        
+        # Додаємо оновлення в чергу через event loop
+        asyncio.run_coroutine_threadsafe(
+            process_update(update), 
+            event_loop
+        )
+        logger.info("✅ Оновлення успішно додано в чергу обробки")
+        
+        return 'ok'
+        
+    except Exception as e:
+        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
+        return "Error", 500
+
+@app.route('/set_webhook')
+def set_webhook_route():
+    """Встановити webhook через HTTP запит"""
+    logger.info("🔄 Запит на встановлення webhook")
+    try:
+        if application and event_loop:
+            # Використовуємо існуючий event loop
+            future = asyncio.run_coroutine_threadsafe(set_webhook(), event_loop)
+            result = future.result(timeout=30)
+            logger.info(f"✅ Результат встановлення webhook: {result}")
+            return result
+        else:
+            return "❌ Бот не ініціалізований"
+    except Exception as e:
+        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
+        return f"❌ Помилка: {e}"
+
+async def set_webhook():
+    """Асинхронна функція для встановлення webhook"""
+    try:
+        await application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Перевіряємо webhook
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
+        
+        return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
+        return f"❌ Помилка: {e}"
 
 if __name__ == "__main__":
     # Бот вже ініціалізований при старті
