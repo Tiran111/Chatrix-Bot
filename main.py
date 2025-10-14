@@ -1,9 +1,7 @@
 import logging
 import os
-import asyncio
-import threading
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Імпорт ваших модулів
@@ -37,7 +35,38 @@ PORT = int(os.environ.get('PORT', 10000))
 # Глобальна змінна для бота
 application = None
 
-# ========== ВСІ ФУНКЦІЇ ВИЗНАЧАЄМО ТУТ ==========
+def setup_handlers(app_instance):
+    """Налаштування обробників"""
+    logger.info("🔄 Налаштування обробників...")
+    
+    # Команди
+    app_instance.add_handler(CommandHandler("start", start))
+    
+    # Обробники кнопок
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
+    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    
+    # Адмін обробники
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    
+    # Фото та універсальний обробник
+    app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+
+    # Обробник помилок
+    app_instance.add_error_handler(error_handler)
+    logger.info("✅ Всі обробники налаштовано")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -77,6 +106,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.id == ADMIN_ID:
             keyboard.append(['👑 Адмін панель'])
         
+        from telegram import ReplyKeyboardMarkup
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
         await update.message.reply_text(
@@ -105,6 +135,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💬 *Напишіть ваше повідомлення:*"""
 
+        from telegram import ReplyKeyboardMarkup
         await update.message.reply_text(
             contact_text,
             reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
@@ -298,58 +329,18 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
-        logger.error(f"❌ Помилка в боті: {context.error}")
+        logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
         if update and update.effective_user:
             await update.message.reply_text("❌ Сталася помилка.")
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
-def setup_handlers(application):
-    """Налаштування обробників"""
-    logger.info("🔄 Налаштування обробників...")
-    
-    application.add_handler(CommandHandler("start", start))
-    
-    # Обробники кнопок
-    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-    application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-    application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-    application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
-    application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-    application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-    application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-    application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-    
-    # Адмін обробники
-    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-    
-    # Фото та універсальний обробник
-    application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
-
-    # Обробник помилок
-    application.add_error_handler(error_handler)
-    logger.info("✅ Всі обробники налаштовано")
-
-async def process_update(update):
-    """Обробка оновлення"""
-    try:
-        await application.process_update(update)
-        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки оновлення: {e}")
-
 def init_bot():
-    """Ініціалізація бота при старті сервера"""
+    """Ініціалізація бота"""
     global application
     
     try:
-        logger.info("🚀 Ініціалізація бота при старті сервера...")
+        logger.info("🚀 Ініціалізація бота...")
         
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
@@ -358,10 +349,6 @@ def init_bot():
         # Налаштовуємо обробники
         setup_handlers(application)
         logger.info("✅ Обробники налаштовано")
-        
-        # Встановлюємо webhook
-        asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
-        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
         logger.info("🤖 Бот успішно ініціалізовано!")
         
@@ -423,10 +410,16 @@ def set_webhook_route():
         if application is None:
             init_bot()
         
-        asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
-        webhook_info = asyncio.run(application.bot.get_webhook_info())
+        # Використовуємо вбудований метод для встановлення webhook
+        import asyncio
         
-        result = f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        async def set_webhook_async():
+            await application.bot.set_webhook(WEBHOOK_URL)
+            webhook_info = await application.bot.get_webhook_info()
+            return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        
+        # Запускаємо в окремому event loop
+        result = asyncio.run(set_webhook_async())
         logger.info(f"✅ Результат встановлення webhook: {result}")
         return result
         
