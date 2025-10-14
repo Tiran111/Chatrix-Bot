@@ -36,7 +36,8 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальна змінна для бота
 application = None
-event_loop = None
+
+# ========== ВСІ ФУНКЦІЇ ВИЗНАЧАЄМО ТУТ ==========
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -345,14 +346,10 @@ async def process_update(update):
 
 def init_bot():
     """Ініціалізація бота при старті сервера"""
-    global application, event_loop
+    global application
     
     try:
         logger.info("🚀 Ініціалізація бота при старті сервера...")
-        
-        # Створюємо event loop
-        event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(event_loop)
         
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
@@ -363,22 +360,15 @@ def init_bot():
         logger.info("✅ Обробники налаштовано")
         
         # Встановлюємо webhook
-        event_loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
+        asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
-        # Запускаємо event loop в окремому потоці
-        def run_event_loop():
-            event_loop.run_forever()
-        
-        loop_thread = threading.Thread(target=run_event_loop, daemon=True)
-        loop_thread.start()
-        logger.info("✅ Event loop запущено")
+        logger.info("🤖 Бот успішно ініціалізовано!")
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
 
-# Ініціалізуємо бота при імпорті модуля
-init_bot()
+# ========== FLASK ROUTES ==========
 
 @app.route('/')
 def home():
@@ -415,11 +405,8 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Додаємо оновлення в чергу через event loop
-        asyncio.run_coroutine_threadsafe(
-            process_update(update), 
-            event_loop
-        )
+        # Додаємо оновлення в чергу
+        application.update_queue.put_nowait(update)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
@@ -433,34 +420,26 @@ def set_webhook_route():
     """Встановити webhook через HTTP запит"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
-        if application and event_loop:
-            # Використовуємо існуючий event loop
-            future = asyncio.run_coroutine_threadsafe(set_webhook(), event_loop)
-            result = future.result(timeout=30)
-            logger.info(f"✅ Результат встановлення webhook: {result}")
-            return result
-        else:
-            return "❌ Бот не ініціалізований"
+        if application is None:
+            init_bot()
+        
+        asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
+        webhook_info = asyncio.run(application.bot.get_webhook_info())
+        
+        result = f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
+        logger.info(f"✅ Результат встановлення webhook: {result}")
+        return result
+        
     except Exception as e:
         logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
-async def set_webhook():
-    """Асинхронна функція для встановлення webhook"""
-    try:
-        await application.bot.set_webhook(WEBHOOK_URL)
-        
-        # Перевіряємо webhook
-        webhook_info = await application.bot.get_webhook_info()
-        logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
-        
-        return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
-        return f"❌ Помилка: {e}"
+# ========== ЗАПУСК СЕРВЕРА ==========
 
 if __name__ == "__main__":
-    # Бот вже ініціалізований при старті
+    # Ініціалізуємо бота
+    init_bot()
+    
+    # Запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
     app.run(host='0.0.0.0', port=PORT, debug=False)
