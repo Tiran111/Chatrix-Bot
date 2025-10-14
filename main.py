@@ -37,6 +37,7 @@ PORT = int(os.environ.get('PORT', 10000))
 # Глобальна змінна для бота
 application = None
 event_loop = None
+bot_initialized = False
 
 def run_async_tasks():
     """Запуск асинхронних завдань в окремому потоці"""
@@ -45,7 +46,7 @@ def run_async_tasks():
     asyncio.set_event_loop(event_loop)
     event_loop.run_forever()
 
-# Запускаємо event loop в окремому потоці при старті
+# Запускаємо event loop в окремому потоці
 async_thread = threading.Thread(target=run_async_tasks, daemon=True)
 async_thread.start()
 
@@ -357,7 +358,7 @@ async def process_update(update):
 
 async def initialize_bot_async():
     """Асинхронна ініціалізація бота"""
-    global application
+    global application, bot_initialized
     
     try:
         logger.info("🚀 Асинхронна ініціалізація бота...")
@@ -378,6 +379,7 @@ async def initialize_bot_async():
         await application.bot.set_webhook(WEBHOOK_URL)
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
+        bot_initialized = True
         logger.info("🤖 Бот успішно ініціалізовано та готовий до роботи!")
         
     except Exception as e:
@@ -385,10 +387,29 @@ async def initialize_bot_async():
 
 def init_bot():
     """Ініціалізація бота"""
+    global event_loop
+    
     try:
+        # Чекаємо поки event loop буде готовий
+        import time
+        max_wait_time = 10  # секунд
+        start_time = time.time()
+        
+        while event_loop is None and (time.time() - start_time) < max_wait_time:
+            time.sleep(0.1)
+            logger.info("⏳ Чекаємо на ініціалізацію event loop...")
+        
+        if event_loop is None:
+            logger.error("❌ Event loop не ініціалізований протягом 10 секунд")
+            return
+        
+        logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
+        
         # Запускаємо асинхронну ініціалізацію через event loop
         future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=30)
+        future.result(timeout=30)  # Чекаємо до 30 секунд
+        logger.info("✅ Бот успішно ініціалізовано")
+        
     except Exception as e:
         logger.error(f"❌ Помилка запуску бота: {e}", exc_info=True)
 
@@ -416,8 +437,10 @@ def webhook():
     try:
         logger.info("📨 Отримано webhook запит від Telegram")
         
-        if application is None:
+        if not bot_initialized or application is None:
             logger.error("❌ Бот не ініціалізований")
+            # Спроба ініціалізувати бота
+            init_bot()
             return "Bot not initialized", 500
             
         # Отримуємо оновлення від Telegram
@@ -444,9 +467,9 @@ def set_webhook_route():
     """Встановити webhook через HTTP запит"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
-        if application is None:
+        if not bot_initialized:
             init_bot()
-            return "✅ Бот ініціалізовано! Webhook вже встановлено."
+            return "🔄 Бот ініціалізується... Спробуйте ще раз через кілька секунд."
         
         # Перевіряємо стан webhook
         future = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
@@ -460,10 +483,17 @@ def set_webhook_route():
         logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
+@app.before_first_request
+def before_first_request():
+    """Ініціалізація бота перед першим запитом"""
+    logger.info("🔄 Ініціалізація бота перед першим запитом...")
+    init_bot()
+
 # ========== ЗАПУСК СЕРВЕРА ==========
 
 if __name__ == "__main__":
     # Ініціалізуємо бота
+    logger.info("🚀 Запуск додатку...")
     init_bot()
     
     # Запускаємо Flask сервер
