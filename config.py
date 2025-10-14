@@ -1,10 +1,17 @@
 import os
 
 # Токен бота з змінної середовища
-TOKEN = os.environ.get('TELEGRAM_TOKEN', 'your_bot_token_here')
+TOKEN = os.environ.get('BOT_TOKEN')
+if not TOKEN:
+    raise ValueError("❌ BOT_TOKEN не встановлено в змінних середовища")
 
 # ID адміністратора
-ADMIN_ID = int(os.environ.get('ADMIN_ID', 123456789))
+try:
+    ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
+    if ADMIN_ID == 0:
+        raise ValueError("❌ ADMIN_ID не встановлено в змінних середовища")
+except ValueError:
+    raise ValueError("❌ ADMIN_ID має бути числовим значенням")
 
 # Налаштування бази даних
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///bot_database.db')

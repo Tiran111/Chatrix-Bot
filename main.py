@@ -42,6 +42,29 @@ event_loop = None
 bot_initialized = False
 bot_initialization_started = False
 
+def validate_environment():
+    """Перевірка змінних середовища"""
+    required_vars = ['BOT_TOKEN', 'ADMIN_ID']
+    missing_vars = []
+    
+    for var in required_vars:
+        if not os.environ.get(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        error_msg = f"❌ Відсутні обов'язкові змінні середовища: {', '.join(missing_vars)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # Перевірка формату токена
+    token = os.environ.get('BOT_TOKEN')
+    if not token or token == 'your_bot_token_here':
+        error_msg = "❌ Ви використовуєте тестовий токен. Встановіть реальний токен бота."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    logger.info("✅ Змінні середовища перевірені успішно")
+
 def run_async_tasks():
     """Запуск асинхронних завдань в окремому потоці"""
     global event_loop
@@ -118,51 +141,57 @@ async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE, u
         current_user_id = query.from_user.id
         
         # Додаємо лайк в базу
-        db.add_like(current_user_id, user_id)
+        success, message = db.add_like(current_user_id, user_id)
         
-        # Отримуємо інформацію про користувачів
-        current_user_profile = db.get_user_profile(current_user_id)[0]
-        target_user_profile = db.get_user_profile(user_id)[0]
-        
-        # Перевіряємо чи це взаємний лайк
-        if db.has_like(user_id, current_user_id):
-            # Це матч!
-            match_text = "🎉 У вас новий матч!"
+        if success:
+            # Отримуємо інформацію про користувачів
+            current_user = db.get_user(current_user_id)
+            target_user = db.get_user(user_id)
             
-            # Сповіщаємо поточного користувача
-            await query.edit_message_text(
-                f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user_profile['name']}!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{user_id}")]
-                ])
-            )
-            
-            # Сповіщаємо іншого користувача
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"🎉 У вас новий матч з {current_user_profile['name']}!",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{current_user_id}")]
-                    ])
-                )
-            except Exception as e:
-                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
+            if current_user and target_user:
+                # Перевіряємо чи це взаємний лайк
+                if db.has_liked(user_id, current_user_id):
+                    # Це матч!
+                    match_text = "🎉 У вас новий матч!"
+                    
+                    # Сповіщаємо поточного користувача
+                    await query.edit_message_text(
+                        f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user['first_name']}!",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{user_id}")]
+                        ])
+                    )
+                    
+                    # Сповіщаємо іншого користувача
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🎉 У вас новий матч з {current_user['first_name']}!",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{current_user_id}")]
+                            ])
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
+                else:
+                    # Просто лайк
+                    await query.edit_message_text(
+                        "❤️ Ви відправили лайк! Очікуйте на взаємність.",
+                        reply_markup=None
+                    )
+                    
+                    # Сповіщаємо користувача про лайк
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"❤️ Вас лайкнув(ла) {current_user['first_name']}! Перевірте хто вас лайкнув у меню."
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
+            else:
+                await query.edit_message_text("❌ Помилка: користувача не знайдено")
         else:
-            # Просто лайк
-            await query.edit_message_text(
-                "❤️ Ви відправили лайк! Очікуйте на взаємність.",
-                reply_markup=None
-            )
-            
-            # Сповіщаємо користувача про лайк
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"❤️ Вас лайкнув(ла) {current_user_profile['name']}! Перевірте хто вас лайкнув у меню."
-                )
-            except Exception as e:
-                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
+            await query.edit_message_text(f"❌ {message}")
             
     except Exception as e:
         logger.error(f"❌ Помилка в handle_like_back: {e}")
@@ -182,15 +211,18 @@ async def start_message_to_user(update: Update, context: ContextTypes.DEFAULT_TY
         user_states[current_user_id] = States.SEND_MESSAGE
         
         # Отримуємо інформацію про користувача
-        user_profile = db.get_user_profile(user_id)[0]
+        user = db.get_user(user_id)
         
-        await query.edit_message_text(
-            f"💌 Напишіть повідомлення для {user_profile['name']}:\n\n"
-            f"✏️ Ваше повідомлення буде відправлено анонімно. Користувач зможе відповісти вам через бота.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Скасувати", callback_data="cancel_message")]
-            ])
-        )
+        if user:
+            await query.edit_message_text(
+                f"💌 Напишіть повідомлення для {user['first_name']}:\n\n"
+                f"✏️ Ваше повідомлення буде відправлено анонімно. Користувач зможе відповісти вам через бота.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Скасувати", callback_data="cancel_message")]
+                ])
+            )
+        else:
+            await query.edit_message_text("❌ Користувача не знайдено")
         
     except Exception as e:
         logger.error(f"❌ Помилка в start_message_to_user: {e}")
@@ -209,14 +241,18 @@ async def send_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = context.user_data['message_to_user']
         
         # Отримуємо інформацію про користувачів
-        current_user_profile = db.get_user_profile(user.id)[0]
-        target_user_profile = db.get_user_profile(target_user_id)[0]
+        current_user = db.get_user(user.id)
+        target_user = db.get_user(target_user_id)
+        
+        if not current_user or not target_user:
+            await update.message.reply_text("❌ Користувача не знайдено.")
+            return
         
         # Відправляємо повідомлення цільовому користувачу
         try:
             await context.bot.send_message(
                 chat_id=target_user_id,
-                text=f"💌 Ви отримали повідомлення від {current_user_profile['name']}:\n\n"
+                text=f"💌 Ви отримали повідомлення від {current_user['first_name']}:\n\n"
                      f"_{message_text}_\n\n"
                      f"💬 Щоб відповісти, використовуйте кнопку нижче:",
                 reply_markup=InlineKeyboardMarkup([
@@ -553,6 +589,9 @@ def init_bot():
     bot_initialization_started = True
     
     try:
+        # Перевіряємо змінні середовища
+        validate_environment()
+        
         # Чекаємо поки event loop буде готовий
         max_wait_time = 10  # секунд
         start_time = time.time()
