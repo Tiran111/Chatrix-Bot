@@ -38,16 +38,42 @@ PORT = int(os.environ.get('PORT', 10000))
 application = None
 event_loop = None
 
-def run_async_tasks():
-    """Запуск асинхронних завдань в окремому потоці"""
-    global event_loop
-    event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(event_loop)
-    event_loop.run_forever()
+def init_bot():
+    """Ініціалізація бота при старті сервера"""
+    global application, event_loop
+    
+    try:
+        logger.info("🚀 Ініціалізація бота при старті сервера...")
+        
+        # Створюємо event loop
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
+        
+        # Створюємо бота
+        application = Application.builder().token(TOKEN).build()
+        logger.info("✅ Application створено")
+        
+        # Налаштовуємо обробники
+        setup_handlers(application)
+        logger.info("✅ Обробники налаштовано")
+        
+        # Встановлюємо webhook
+        event_loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
+        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
+        
+        # Запускаємо event loop в окремому потоці
+        def run_event_loop():
+            event_loop.run_forever()
+        
+        loop_thread = threading.Thread(target=run_event_loop, daemon=True)
+        loop_thread.start()
+        logger.info("✅ Event loop запущено")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
 
-# Запускаємо event loop в окремому потоці при старті
-async_thread = threading.Thread(target=run_async_tasks, daemon=True)
-async_thread.start()
+# Ініціалізуємо бота при імпорті модуля
+init_bot()
 
 @app.route('/')
 def home():
@@ -110,44 +136,31 @@ def set_webhook_route():
     """Встановити webhook через HTTP запит"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
-        # Використовуємо окремий event loop для цього запиту
-        result = asyncio.run(set_webhook())
-        logger.info(f"✅ Результат встановлення webhook: {result}")
-        return result
+        if application and event_loop:
+            # Використовуємо існуючий event loop
+            future = asyncio.run_coroutine_threadsafe(set_webhook(), event_loop)
+            result = future.result(timeout=30)
+            logger.info(f"✅ Результат встановлення webhook: {result}")
+            return result
+        else:
+            return "❌ Бот не ініціалізований"
     except Exception as e:
         logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 async def set_webhook():
     """Асинхронна функція для встановлення webhook"""
-    global application
-    
     try:
-        logger.info("🚀 Початок ініціалізації бота...")
-        
-        # Створюємо бота
-        application = Application.builder().token(TOKEN).build()
-        logger.info("✅ Application створено")
-        
-        # Налаштовуємо обробники
-        setup_handlers(application)
-        logger.info("✅ Обробники налаштовано")
-        
-        # Встановлюємо webhook
-        logger.info(f"🌐 Встановлення webhook на URL: {WEBHOOK_URL}")
         await application.bot.set_webhook(WEBHOOK_URL)
         
         # Перевіряємо webhook
         webhook_info = await application.bot.get_webhook_info()
         logger.info(f"📊 Інформація про webhook: {webhook_info.url}, pending: {webhook_info.pending_update_count}")
         
-        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
-        logger.info("🤖 Бот готовий до роботи!")
-        
         return f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -163,7 +176,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Скидаємо стан
         user_states[user.id] = States.START
-        logger.info(f"✅ Стан скинуто для {user.id}")
         
         # Вітання
         welcome_text = (
@@ -174,7 +186,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Перевіряємо чи заповнений профіль
         user_data, is_complete = db.get_user_profile(user.id)
-        logger.info(f"📊 Профіль користувача {user.id}: complete={is_complete}")
         
         if not is_complete:
             welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
@@ -207,7 +218,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
-        logger.info(f"👨‍💼 Користувач {user.first_name} запитує зв'язок з адміном")
+        user_states[user.id] = States.CONTACT_ADMIN
         
         contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
 
@@ -218,27 +229,21 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💬 *Напишіть ваше повідомлення:*"""
 
-        # Встановлюємо стан очікування повідомлення для адміна
-        user_states[user.id] = States.CONTACT_ADMIN
-        
         await update.message.reply_text(
             contact_text,
             reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
             parse_mode='Markdown'
         )
-        logger.info(f"✅ Запит на зв'язок з адміном оброблено для {user.first_name}")
         
     except Exception as e:
-        logger.error(f"❌ Помилка в contact_admin: {e}", exc_info=True)
-        await update.message.reply_text("❌ Сталася помилка. Спробуйте ще раз.")
+        logger.error(f"❌ Помилка в contact_admin: {e}")
+        await update.message.reply_text("❌ Сталася помилка.")
 
 async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка повідомлення для адміна"""
     try:
         user = update.effective_user
-        logger.info(f"📩 Обробка повідомлення для адміна від {user.first_name}")
         
-        # Перевіряємо стан
         if user_states.get(user.id) != States.CONTACT_ADMIN:
             return
         
@@ -456,6 +461,6 @@ def setup_handlers(application):
     logger.info("✅ Всі обробники налаштовано")
 
 if __name__ == "__main__":
-    # Просто запускаємо Flask сервер
+    # Бот вже ініціалізований при старті
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
     app.run(host='0.0.0.0', port=PORT, debug=False)
