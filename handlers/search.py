@@ -411,13 +411,22 @@ async def show_likes(update: Update, context: CallbackContext):
             parse_mode='Markdown'
         )
 
-async def handle_like_back(update: Update, context: CallbackContext):
-    """Обробка взаємного лайку зі списку лайків"""
+async def handle_like_back_callback(update: Update, context: CallbackContext):
+    """Обробка взаємного лайку зі списку лайків через callback"""
     query = update.callback_query
     await query.answer()
     
     user = query.from_user
     liked_user_id = int(query.data.split('_')[2])
+    
+    # Перевіряємо чи користувач заблокований
+    user_data = db.get_user(user.id)
+    if user_data and user_data.get('is_banned'):
+        await query.edit_message_caption(
+            caption=query.message.caption + "\n\n🚫 Ваш акаунт заблоковано.",
+            parse_mode='Markdown'
+        )
+        return
     
     # Додаємо лайк з перевіркою обмежень
     success, message = db.add_like(user.id, liked_user_id)
@@ -446,7 +455,7 @@ async def handle_like_back(update: Update, context: CallbackContext):
                     )
                 else:
                     await query.edit_message_caption(
-                        caption=query.message.caption + "\n\n💕 *Ви створили матч!*",
+                        caption=query.message.caption + "\n\n💕 *Ви створили матч!*\n\nℹ️ *У цього користувача немає username*",
                         parse_mode='Markdown'
                     )
             else:
