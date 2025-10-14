@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import threading
+import time
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -38,6 +39,7 @@ PORT = int(os.environ.get('PORT', 10000))
 application = None
 event_loop = None
 bot_initialized = False
+bot_initialization_started = False
 
 def run_async_tasks():
     """Запуск асинхронних завдань в окремому потоці"""
@@ -387,11 +389,15 @@ async def initialize_bot_async():
 
 def init_bot():
     """Ініціалізація бота"""
-    global event_loop
+    global event_loop, bot_initialization_started
+    
+    if bot_initialization_started:
+        return
+        
+    bot_initialization_started = True
     
     try:
         # Чекаємо поки event loop буде готовий
-        import time
         max_wait_time = 10  # секунд
         start_time = time.time()
         
@@ -417,6 +423,9 @@ def init_bot():
 
 @app.route('/')
 def home():
+    # Ініціалізуємо бота при першому запиті
+    if not bot_initialization_started:
+        init_bot()
     return "🤖 Chatrix Bot is running!"
 
 @app.route('/health')
@@ -437,11 +446,17 @@ def webhook():
     try:
         logger.info("📨 Отримано webhook запит від Telegram")
         
+        # Якщо бот ще не ініціалізований, спробуємо ініціалізувати
         if not bot_initialized or application is None:
-            logger.error("❌ Бот не ініціалізований")
-            # Спроба ініціалізувати бота
+            logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
-            return "Bot not initialized", 500
+            
+            # Чекаємо трохи на ініціалізацію
+            time.sleep(2)
+            
+            if not bot_initialized or application is None:
+                logger.error("❌ Бот все ще не ініціалізований")
+                return "Bot not initialized", 500
             
         # Отримуємо оновлення від Telegram
         update_data = request.get_json()
@@ -482,12 +497,6 @@ def set_webhook_route():
     except Exception as e:
         logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
-
-@app.before_first_request
-def before_first_request():
-    """Ініціалізація бота перед першим запитом"""
-    logger.info("🔄 Ініціалізація бота перед першим запитом...")
-    init_bot()
 
 # ========== ЗАПУСК СЕРВЕРА ==========
 
