@@ -4,6 +4,7 @@ from database.models import db
 from keyboards.main_menu import get_main_menu, get_admin_menu, get_cancel_keyboard
 from utils.states import user_states, States
 from config import ADMIN_ID
+from handlers.notifications import notification_system
 import logging
 import time
 
@@ -69,6 +70,20 @@ async def handle_admin_actions(update: Update, context: CallbackContext):
     
     elif text == "🔙 Головне меню":
         await update.message.reply_text("👋 Повертаємось до головного меню", reply_markup=get_main_menu(user.id))
+    
+    # Обробка кнопок з меню користувачів
+    elif text == "📋 Список користувачів":
+        await show_users_list(update, context)
+    elif text == "🔍 Пошук користувача":
+        await start_user_search(update, context)
+    elif text == "🚫 Заблокувати користувача":
+        await start_ban_user(update, context)
+    elif text == "✅ Розблокувати користувача":
+        await start_unban_user(update, context)
+    elif text == "📋 Список заблокованих":
+        await show_banned_users(update, context)
+    elif text == "🔙 Назад до адмін-панелі":
+        await show_admin_panel(update, context)
 
 async def show_users_management(update: Update, context: CallbackContext):
     """Керування користувачами"""
@@ -84,8 +99,8 @@ async def show_users_management(update: Update, context: CallbackContext):
     
     keyboard = [
         ["📋 Список користувачів", "🔍 Пошук користувача"],
-        ["🚫 Заблокувати", "✅ Розблокувати"],
-        ["🔙 Назад до адмін-панелі"]
+        ["🚫 Заблокувати користувача", "✅ Розблокувати користувача"],
+        ["📋 Список заблокованих", "🔙 Назад до адмін-панелі"]
     ]
     
     await update.message.reply_text(
@@ -116,6 +131,50 @@ async def show_users_list(update: Update, context: CallbackContext):
         users_text += f"\n... та ще {len(users) - 10} користувачів"
     
     await update.message.reply_text(users_text, parse_mode='Markdown')
+
+async def start_user_search(update: Update, context: CallbackContext):
+    """Початок пошуку користувача"""
+    user = update.effective_user
+    user_states[user.id] = States.ADMIN_SEARCH_USER
+    await update.message.reply_text(
+        "🔍 Введіть ID користувача або ім'я для пошуку:",
+        reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
+    )
+
+async def handle_user_search(update: Update, context: CallbackContext):
+    """Обробка пошуку користувача"""
+    user = update.effective_user
+    if user.id != ADMIN_ID or user_states.get(user.id) != States.ADMIN_SEARCH_USER:
+        return
+    
+    search_query = update.message.text
+    
+    if search_query == "🔙 Скасувати":
+        user_states[user.id] = States.START
+        await update.message.reply_text("❌ Пошук скасовано")
+        return
+    
+    # Виконуємо пошук
+    results = db.search_user(search_query)
+    
+    if results:
+        search_text = f"🔍 *Результати пошуку для '{search_query}':*\n\n"
+        for i, user_data in enumerate(results[:5], 1):
+            user_name = user_data[3] if len(user_data) > 3 else "Невідомо"
+            user_id = user_data[1] if len(user_data) > 1 else "Невідомо"
+            is_banned = user_data[13] if len(user_data) > 13 else False
+            
+            status = "🚫" if is_banned else "✅"
+            search_text += f"{i}. {status} {user_name} (ID: `{user_id}`)\n"
+        
+        if len(results) > 5:
+            search_text += f"\n... та ще {len(results) - 5} користувачів"
+        
+        await update.message.reply_text(search_text, parse_mode='Markdown')
+    else:
+        await update.message.reply_text("❌ Користувачів не знайдено")
+    
+    user_states[user.id] = States.START
 
 async def start_broadcast(update: Update, context: CallbackContext):
     """Початок розсилки"""
@@ -214,7 +273,7 @@ async def show_detailed_stats(update: Update, context: CallbackContext):
     await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 async def handle_broadcast_message(update: Update, context: CallbackContext):
-    """Обробка повідомлення для розсилки"""
+    """Обробка повідомлення для розсилки з сповіщенням"""
     user = update.effective_user
     if user.id != ADMIN_ID or user_states.get(user.id) != States.BROADCAST:
         return
@@ -251,12 +310,17 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
             logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
             fail_count += 1
     
+    # Сповіщаємо адміна про результат
     await update.message.reply_text(
         f"📊 *Результат розсилки:*\n\n"
         f"✅ Відправлено: {success_count}\n"
         f"❌ Не вдалося: {fail_count}",
         parse_mode='Markdown'
     )
+    
+    # Відправляємо сповіщення про успішну розсилку
+    await notification_system.notify_broadcast_sent(context, user.id)
+    
     user_states[user.id] = States.START
 
 async def start_ban_user(update: Update, context: CallbackContext):

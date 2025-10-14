@@ -5,6 +5,7 @@ from keyboards.main_menu import get_main_menu
 from keyboards.search_keyboards import get_search_navigation
 from utils.states import user_states, States
 from config import ADMIN_ID
+from handlers.notifications import notification_system
 import logging
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
         )
 
 async def handle_like(update: Update, context: CallbackContext):
-    """Обробка лайку з перевіркою обмежень"""
+    """Обробка лайку з перевіркою обмежень та сповіщеннями"""
     user = update.effective_user
     
     # Перевіряємо чи користувач заблокований
@@ -185,8 +186,12 @@ async def handle_like(update: Update, context: CallbackContext):
             is_mutual = db.has_liked(current_profile_id, user.id)
             
             if is_mutual:
+                # Відправляємо сповіщення про матч
+                await notification_system.notify_new_match(context, user.id, current_profile_id)
                 await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
             else:
+                # Відправляємо сповіщення про лайк
+                await notification_system.notify_new_like(context, user.id, current_profile_id)
                 await update.message.reply_text(f"❤️ {message}")
         else:
             await update.message.reply_text(f"❌ {message}")

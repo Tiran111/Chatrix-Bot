@@ -16,7 +16,8 @@ from config import TOKEN, ADMIN_ID
 # Імпорт обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
 from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
-from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user
+from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
+from handlers.notifications import notification_system
 
 # Налаштування логування
 logging.basicConfig(
@@ -162,7 +163,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сталася помилка.")
 
 async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка повідомлення для адміна"""
+    """Обробка повідомлення для адміна з сповіщенням"""
     try:
         user = update.effective_user
         
@@ -176,19 +177,8 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
         
-        # Відправляємо повідомлення адміну
-        admin_message = f"""📩 *Нове повідомлення від користувача*
-
-👤 *Користувач:* {user.first_name}
-🆔 *ID:* `{user.id}`
-📝 *Повідомлення:*
-{message_text}"""
-
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=admin_message,
-            parse_mode='Markdown'
-        )
+        # Відправляємо сповіщення адміну
+        await notification_system.notify_contact_admin(context, user.id, message_text)
         
         await update.message.reply_text(
             "✅ Ваше повідомлення відправлено адміністратору!",
@@ -261,6 +251,9 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             elif admin_state == States.BROADCAST:
                 await handle_broadcast_message(update, context)
+                return
+            elif admin_state == States.ADMIN_SEARCH_USER:
+                await handle_user_search(update, context)
                 return
         
         # Адмін-меню
