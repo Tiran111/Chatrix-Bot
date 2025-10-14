@@ -1,7 +1,8 @@
 import logging
 import os
+import asyncio
 from flask import Flask, request
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Імпорт ваших модулів
@@ -106,7 +107,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.id == ADMIN_ID:
             keyboard.append(['👑 Адмін панель'])
         
-        from telegram import ReplyKeyboardMarkup
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
         await update.message.reply_text(
@@ -135,7 +135,6 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💬 *Напишіть ваше повідомлення:*"""
 
-        from telegram import ReplyKeyboardMarkup
         await update.message.reply_text(
             contact_text,
             reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True),
@@ -392,8 +391,16 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Додаємо оновлення в чергу
-        application.update_queue.put_nowait(update)
+        # Обробляємо оновлення синхронно
+        async def process_update():
+            try:
+                await application.process_update(update)
+                logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
+            except Exception as e:
+                logger.error(f"❌ Помилка обробки оновлення: {e}")
+        
+        # Запускаємо обробку
+        asyncio.create_task(process_update())
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
@@ -411,8 +418,6 @@ def set_webhook_route():
             init_bot()
         
         # Використовуємо вбудований метод для встановлення webhook
-        import asyncio
-        
         async def set_webhook_async():
             await application.bot.set_webhook(WEBHOOK_URL)
             webhook_info = await application.bot.get_webhook_info()
