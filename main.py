@@ -115,7 +115,7 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         user = query.from_user
         callback_data = query.data
         
-        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data}")
+        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data} від {user.id}")
         
         # Отримуємо ID користувача з callback_data
         target_user_id = int(callback_data.split('_')[1])
@@ -123,12 +123,17 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         from database.models import db
         from handlers.notifications import notification_system
         
+        logger.info(f"🔍 [LIKE] Користувач {user.id} лайкає {target_user_id}")
+        
         # Додаємо лайк з перевіркою обмежень
         success, message = db.add_like(user.id, target_user_id)
+        
+        logger.info(f"🔍 [LIKE RESULT] Успіх: {success}, Повідомлення: {message}")
         
         if success:
             # Перевіряємо чи це взаємний лайк (матч)
             is_mutual = db.has_liked(target_user_id, user.id)
+            logger.info(f"🔍 [LIKE MUTUAL] Взаємний: {is_mutual}")
             
             if is_mutual:
                 # Відправляємо сповіщення про матч
@@ -165,7 +170,7 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text(f"❌ {message}")
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки лайку: {e}")
+        logger.error(f"❌ Помилка обробки лайку: {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
@@ -231,7 +236,7 @@ async def handle_next_profile_callback(update: Update, context: ContextTypes.DEF
                 )
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
+        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка.")
         except:
@@ -252,7 +257,11 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
         from database.models import db
         from handlers.notifications import notification_system
         
+        logger.info(f"🔍 [LIKE BACK] Користувач {current_user_id} лайкає назад {user_id}")
+        
         success, message = db.add_like(current_user_id, user_id)
+        
+        logger.info(f"🔍 [LIKE BACK RESULT] Успіх: {success}, Повідомлення: {message}")
         
         if success:
             current_user = db.get_user(current_user_id)
@@ -298,7 +307,7 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
             await query.edit_message_text(f"❌ {message}")
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки взаємного лайку: {e}")
+        logger.error(f"❌ Помилка обробки взаємного лайку: {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
