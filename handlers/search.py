@@ -1,4 +1,4 @@
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext
 from database.models import db
 from keyboards.main_menu import get_main_menu
@@ -188,7 +188,30 @@ async def handle_like(update: Update, context: CallbackContext):
             if is_mutual:
                 # Відправляємо сповіщення про матч
                 await notification_system.notify_new_match(context, user.id, current_profile_id)
-                await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
+                
+                # Отримуємо дані користувача для кнопки переходу в Telegram
+                matched_user = db.get_user(current_profile_id)
+                if matched_user:
+                    username = matched_user.get('username')
+                    if username:
+                        # Створюємо кнопку для переходу в Telegram
+                        keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
+                        ])
+                        await update.message.reply_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            "💬 *Тепер ви можете почати спілкування!*",
+                            reply_markup=keyboard,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            "ℹ️ *У цього користувача немає username, тому ви не можете написати йому напряму.*",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
             else:
                 # Відправляємо сповіщення про лайк
                 await notification_system.notify_new_like(context, user.id, current_profile_id)
@@ -289,14 +312,43 @@ async def show_matches(update: Update, context: CallbackContext):
             profile_text = format_profile_text(match, "💕 МАТЧ!")
             main_photo = db.get_main_photo(match[1])
             
+            # Отримуємо username для кнопки
+            matched_user = db.get_user(match[1])
+            username = matched_user.get('username') if matched_user else None
+            
             if main_photo:
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=profile_text,
-                    parse_mode='Markdown'
-                )
+                if username:
+                    # Додаємо кнопку для переходу в Telegram
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
+                    ])
+                    await update.message.reply_photo(
+                        photo=main_photo,
+                        caption=profile_text,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_photo(
+                        photo=main_photo,
+                        caption=profile_text + "\n\nℹ️ *У цього користувача немає username*",
+                        parse_mode='Markdown'
+                    )
             else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
+                if username:
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
+                    ])
+                    await update.message.reply_text(
+                        profile_text,
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text(
+                        profile_text + "\n\nℹ️ *У цього користувача немає username*",
+                        parse_mode='Markdown'
+                    )
     else:
         await update.message.reply_text("😔 У вас ще немає матчів", reply_markup=get_main_menu(user.id))
 
@@ -324,19 +376,94 @@ async def show_likes(update: Update, context: CallbackContext):
             profile_text = format_profile_text(liker, status)
             main_photo = db.get_main_photo(liker[1])
             
+            # Отримуємо username для кнопки
+            liked_user = db.get_user(liker[1])
+            username = liked_user.get('username') if liked_user else None
+            
+            # Створюємо клавіатуру для дій
+            keyboard_buttons = []
+            if username:
+                keyboard_buttons.append([InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")])
+            
+            if not is_mutual:
+                keyboard_buttons.append([InlineKeyboardButton("❤️ Взаємний лайк", callback_data=f"like_back_{liker[1]}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard_buttons) if keyboard_buttons else None
+            
             if main_photo:
                 await update.message.reply_photo(
                     photo=main_photo,
                     caption=profile_text,
+                    reply_markup=reply_markup,
                     parse_mode='Markdown'
                 )
             else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
+                await update.message.reply_text(
+                    profile_text,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
     else:
         await update.message.reply_text(
             "😔 Вас ще ніхто не лайкнув\n\n"
             "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
             reply_markup=get_main_menu(user.id),
+            parse_mode='Markdown'
+        )
+
+async def handle_like_back(update: Update, context: CallbackContext):
+    """Обробка взаємного лайку зі списку лайків"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = query.from_user
+    liked_user_id = int(query.data.split('_')[2])
+    
+    # Додаємо лайк з перевіркою обмежень
+    success, message = db.add_like(user.id, liked_user_id)
+    
+    if success:
+        # Перевіряємо чи це взаємний лайк (матч)
+        is_mutual = db.has_liked(liked_user_id, user.id)
+        
+        if is_mutual:
+            # Відправляємо сповіщення про матч
+            await notification_system.notify_new_match(context, user.id, liked_user_id)
+            
+            # Отримуємо дані користувача для кнопки переходу в Telegram
+            matched_user = db.get_user(liked_user_id)
+            if matched_user:
+                username = matched_user.get('username')
+                if username:
+                    # Створюємо кнопку для переходу в Telegram
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
+                    ])
+                    await query.edit_message_caption(
+                        caption=query.message.caption + "\n\n💕 *Ви створили матч! Тепер ви можете спілкуватися!*",
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await query.edit_message_caption(
+                        caption=query.message.caption + "\n\n💕 *Ви створили матч!*",
+                        parse_mode='Markdown'
+                    )
+            else:
+                await query.edit_message_caption(
+                    caption=query.message.caption + "\n\n💕 *Ви створили матч!*",
+                    parse_mode='Markdown'
+                )
+        else:
+            # Відправляємо сповіщення про лайк
+            await notification_system.notify_new_like(context, user.id, liked_user_id)
+            await query.edit_message_caption(
+                caption=query.message.caption + f"\n\n❤️ {message}",
+                parse_mode='Markdown'
+            )
+    else:
+        await query.edit_message_caption(
+            caption=query.message.caption + f"\n\n❌ {message}",
             parse_mode='Markdown'
         )
 

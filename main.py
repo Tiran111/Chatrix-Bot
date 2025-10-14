@@ -5,7 +5,7 @@ import threading
 import time
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 # Імпорт ваших модулів
 from database.models import db
@@ -15,7 +15,7 @@ from config import TOKEN, ADMIN_ID
 
 # Імпорт обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
+from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_back
 from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
 from handlers.notifications import notification_system
 
@@ -77,6 +77,9 @@ def setup_handlers(app_instance):
     # Адмін обробники
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    
+    # Callback обробники
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))

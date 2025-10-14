@@ -4,6 +4,7 @@ from database.models import db
 from keyboards.main_menu import get_main_menu
 import asyncio
 import logging
+from config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +47,40 @@ class NotificationSystem:
             user2 = db.get_user(user2_id)
             
             if user1 and user2:
+                # Отримуємо username для кнопок
+                user1_username = user1.get('username')
+                user2_username = user2.get('username')
+                
                 # Сповіщаємо першому користувачу
-                await context.bot.send_message(
-                    chat_id=user1_id,
-                    text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!",
-                    parse_mode='Markdown'
-                )
+                if user2_username:
+                    keyboard1 = [[{"text": "💬 Написати в Telegram", "url": f"https://t.me/{user2_username}"}]]
+                    await context.bot.send_message(
+                        chat_id=user1_id,
+                        text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=user1_id,
+                        text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\nℹ️ *У цього користувача немає username*",
+                        parse_mode='Markdown'
+                    )
+                
                 # Сповіщаємо другому користувачу
-                await context.bot.send_message(
-                    chat_id=user2_id,
-                    text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!",
-                    parse_mode='Markdown'
-                )
+                if user1_username:
+                    keyboard2 = [[{"text": "💬 Написати в Telegram", "url": f"https://t.me/{user1_username}"}]]
+                    await context.bot.send_message(
+                        chat_id=user2_id,
+                        text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=user2_id,
+                        text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\nℹ️ *У цього користувача немає username*",
+                        parse_mode='Markdown'
+                    )
+                    
                 logger.info(f"✅ Сповіщення про матч відправлено {user1_id} та {user2_id}")
         except Exception as e:
             logger.error(f"❌ Помилка сповіщення про матч: {e}")
@@ -77,7 +100,7 @@ class NotificationSystem:
 {message_text}"""
 
             await context.bot.send_message(
-                chat_id=context.bot_data.get('admin_id', user_id),  # Використовуємо ADMIN_ID з контексту
+                chat_id=ADMIN_ID,
                 text=admin_message,
                 parse_mode='Markdown'
             )
