@@ -144,6 +144,26 @@ class NotificationSystem:
         except Exception as e:
             logger.error(f"❌ Помилка відправки сповіщення про розсилку: {e}")
     
+    async def notify_broadcast_message(self, context: ContextTypes.DEFAULT_TYPE, user_id, message_text):
+        """Сповістити користувача про розсилку"""
+        try:
+            broadcast_message = f"""📢 *Повідомлення від адміністратора*
+
+{message_text}
+
+---
+💞 *Chatrix Bot* - знайомства та спілкування"""
+
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=broadcast_message,
+                parse_mode='Markdown'
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки розсилки для {user_id}: {e}")
+            return False
+    
     async def notify_rating_update(self, context: ContextTypes.DEFAULT_TYPE, user_id):
         """Сповіщення про зміну рейтингу"""
         try:

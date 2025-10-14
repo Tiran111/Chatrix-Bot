@@ -220,12 +220,18 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
     
     for user_data in users:
         try:
-            await context.bot.send_message(
-                chat_id=user_data[1],  # telegram_id
-                text=f"📢 *Повідомлення від адміністратора:*\n\n{message_text}",
-                parse_mode='Markdown'
+            # Використовуємо функцію сповіщення для розсилки
+            success = await notification_system.notify_broadcast_message(
+                context, 
+                user_data[1],  # telegram_id
+                message_text
             )
-            success_count += 1
+            
+            if success:
+                success_count += 1
+            else:
+                fail_count += 1
+                
             time.sleep(0.1)  # Затримка щоб не перевищити ліміти
         except Exception as e:
             logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")

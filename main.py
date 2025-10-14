@@ -7,18 +7,6 @@ from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
-# Імпорт ваших модулів
-from database.models import db
-from keyboards.main_menu import get_main_menu
-from utils.states import user_states, States
-from config import TOKEN, ADMIN_ID
-
-# Імпорт обробників
-from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
-from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
-from handlers.notifications import notification_system
-
 # Налаштування логування
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -63,6 +51,14 @@ def validate_environment():
         logger.error(error_msg)
         raise ValueError(error_msg)
     
+    # Перевірка ADMIN_ID
+    try:
+        admin_id = int(os.environ.get('ADMIN_ID', 0))
+        if admin_id == 0:
+            raise ValueError("ADMIN_ID не встановлено")
+    except ValueError:
+        raise ValueError("❌ ADMIN_ID має бути числовим значенням")
+    
     logger.info("✅ Змінні середовища перевірені успішно")
 
 def run_async_tasks():
@@ -80,6 +76,13 @@ def setup_handlers(app_instance):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
+    # Імпорт обробників після ініціалізації конфігурації
+    from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
+    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_callback, handle_like_back
+    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
+    from handlers.notifications import notification_system
+    from keyboards.main_menu import get_main_menu
+    
     # Команди
     app_instance.add_handler(CommandHandler("start", start))
     
@@ -88,7 +91,6 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
     app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
     app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
     app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
     app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
     app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
@@ -101,9 +103,10 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
-    # Callback обробники
-    app_instance.add_handler(CallbackQueryHandler(universal_callback_handler, pattern='^like_back_'))
-    app_instance.add_handler(CallbackQueryHandler(universal_callback_handler, pattern='^message_'))
+    # Callback обробники - ВИПРАВЛЕНО
+    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
+    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -113,172 +116,67 @@ def setup_handlers(app_instance):
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
 
-async def universal_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Універсальний обробник callback запитів"""
+async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка лайку з callback"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user = query.from_user
+        callback_data = query.data
+        
+        # Отримуємо ID користувача з callback_data
+        target_user_id = int(callback_data.split('_')[1])
+        
+        # Імпорт після ініціалізації
+        from handlers.search import handle_like_callback as like_handler
+        await like_handler(update, context)
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
+        except:
+            pass
+
+async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка взаємного лайку з callback"""
     try:
         query = update.callback_query
         await query.answer()
         
         callback_data = query.data
         
-        # Обробка like_back callback
-        if callback_data.startswith('like_back_'):
-            user_id = int(callback_data.split('_')[2])
-            await handle_like_back(update, context, user_id)
+        # Отримуємо ID користувача з callback_data
+        user_id = int(callback_data.split('_')[2])
         
-        # Обробка message callback
-        elif callback_data.startswith('message_'):
-            user_id = int(callback_data.split('_')[1])
-            await start_message_to_user(update, context, user_id)
+        # Імпорт після ініціалізації
+        from handlers.search import handle_like_back
+        await handle_like_back(update, context, user_id)
             
     except Exception as e:
-        logger.error(f"❌ Помилка в universal_callback_handler: {e}")
-
-async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Обробка лайку назад"""
-    try:
-        query = update.callback_query
-        current_user_id = query.from_user.id
-        
-        # Додаємо лайк в базу
-        success, message = db.add_like(current_user_id, user_id)
-        
-        if success:
-            # Отримуємо інформацію про користувачів
-            current_user = db.get_user(current_user_id)
-            target_user = db.get_user(user_id)
-            
-            if current_user and target_user:
-                # Перевіряємо чи це взаємний лайк
-                if db.has_liked(user_id, current_user_id):
-                    # Це матч!
-                    match_text = "🎉 У вас новий матч!"
-                    
-                    # Сповіщаємо поточного користувача
-                    await query.edit_message_text(
-                        f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user['first_name']}!",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{user_id}")]
-                        ])
-                    )
-                    
-                    # Сповіщаємо іншого користувача
-                    try:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text=f"🎉 У вас новий матч з {current_user['first_name']}!",
-                            reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("💌 Написати повідомлення", callback_data=f"message_{current_user_id}")]
-                            ])
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
-                else:
-                    # Просто лайк
-                    await query.edit_message_text(
-                        "❤️ Ви відправили лайк! Очікуйте на взаємність.",
-                        reply_markup=None
-                    )
-                    
-                    # Сповіщаємо користувача про лайк
-                    try:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text=f"❤️ Вас лайкнув(ла) {current_user['first_name']}! Перевірте хто вас лайкнув у меню."
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
-            else:
-                await query.edit_message_text("❌ Помилка: користувача не знайдено")
-        else:
-            await query.edit_message_text(f"❌ {message}")
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка в handle_like_back: {e}")
+        logger.error(f"❌ Помилка обробки взаємного лайку: {e}")
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
             pass
 
-async def start_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Початок написання повідомлення користувачу"""
+async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка кнопки 'Далі' з callback"""
     try:
         query = update.callback_query
-        current_user_id = query.from_user.id
+        await query.answer()
         
-        # Зберігаємо дані для повідомлення
-        context.user_data['message_to_user'] = user_id
-        user_states[current_user_id] = States.SEND_MESSAGE
-        
-        # Отримуємо інформацію про користувача
-        user = db.get_user(user_id)
-        
-        if user:
-            await query.edit_message_text(
-                f"💌 Напишіть повідомлення для {user['first_name']}:\n\n"
-                f"✏️ Ваше повідомлення буде відправлено анонімно. Користувач зможе відповісти вам через бота.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Скасувати", callback_data="cancel_message")]
-                ])
-            )
-        else:
-            await query.edit_message_text("❌ Користувача не знайдено")
-        
+        # Імпорт після ініціалізації
+        from handlers.search import show_next_profile
+        await show_next_profile(update, context)
+            
     except Exception as e:
-        logger.error(f"❌ Помилка в start_message_to_user: {e}")
-        await update.callback_query.edit_message_text("❌ Сталася помилка.")
-
-async def send_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Відправка повідомлення користувачу"""
-    try:
-        user = update.effective_user
-        message_text = update.message.text
-        
-        if 'message_to_user' not in context.user_data:
-            await update.message.reply_text("❌ Помилка. Спробуйте ще раз.")
-            return
-        
-        target_user_id = context.user_data['message_to_user']
-        
-        # Отримуємо інформацію про користувачів
-        current_user = db.get_user(user.id)
-        target_user = db.get_user(target_user_id)
-        
-        if not current_user or not target_user:
-            await update.message.reply_text("❌ Користувача не знайдено.")
-            return
-        
-        # Відправляємо повідомлення цільовому користувачу
+        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
         try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"💌 Ви отримали повідомлення від {current_user['first_name']}:\n\n"
-                     f"_{message_text}_\n\n"
-                     f"💬 Щоб відповісти, використовуйте кнопку нижче:",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💌 Відповісти", callback_data=f"message_{user.id}")]
-                ]),
-                parse_mode='Markdown'
-            )
-            
-            await update.message.reply_text(
-                "✅ Повідомлення відправлено!",
-                reply_markup=get_main_menu(user.id)
-            )
-            
-        except Exception as e:
-            await update.message.reply_text(
-                "❌ Не вдалося відправити повідомлення. Користувач може бути заблокований або видалений.",
-                reply_markup=get_main_menu(user.id)
-            )
-        
-        # Очищаємо стан
-        user_states[user.id] = States.START
-        context.user_data.pop('message_to_user', None)
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка в send_user_message: {e}")
-        await update.message.reply_text("❌ Сталася помилка.")
+            await update.callback_query.edit_message_text("❌ Сталася помилка.")
+        except:
+            pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -286,6 +184,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         
         logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
+        
+        # Імпорт після ініціалізації
+        from database.models import db
+        from keyboards.main_menu import get_main_menu
+        from utils.states import user_states, States
+        from config import ADMIN_ID
         
         # Додаємо користувача в базу
         db.add_user(user.id, user.username, user.first_name)
@@ -335,6 +239,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
+        from utils.states import user_states, States
         user_states[user.id] = States.CONTACT_ADMIN
         
         contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
@@ -360,6 +265,10 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
     """Обробка повідомлення для адміна з сповіщенням"""
     try:
         user = update.effective_user
+        
+        from utils.states import user_states, States
+        from keyboards.main_menu import get_main_menu
+        from handlers.notifications import notification_system
         
         if user_states.get(user.id) != States.CONTACT_ADMIN:
             return
@@ -390,6 +299,18 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
         text = update.message.text if update.message.text else ""
+        
+        # Імпорт після ініціалізації
+        from utils.states import user_states, States
+        from database.models import db
+        from handlers.profile import handle_profile_message, handle_main_photo
+        from handlers.search import show_user_profile
+        from handlers.admin import handle_ban_user, handle_unban_user, handle_broadcast_message, handle_user_search, show_admin_panel, show_users_list, show_banned_users, start_ban_user, start_unban_user
+        from handlers.profile import start_profile_creation
+        from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection
+        from keyboards.main_menu import get_main_menu
+        from config import ADMIN_ID
+        
         state = user_states.get(user.id, States.START)
 
         # Скасування
@@ -401,11 +322,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Зв'язок з адміном
         if state == States.CONTACT_ADMIN:
             await handle_contact_message(update, context)
-            return
-
-        # Відправка повідомлення користувачу
-        if state == States.SEND_MESSAGE:
-            await send_user_message(update, context)
             return
 
         # Додавання фото
@@ -458,6 +374,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Адмін-меню
         if user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
+                from handlers.admin import handle_admin_actions
                 await handle_admin_actions(update, context)
                 return
             
@@ -480,6 +397,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         elif text == "👤 Мій профіль":
+            from handlers.profile import show_my_profile
             await show_my_profile(update, context)
             return
         
@@ -489,10 +407,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         elif text == "🏙️ По місту":
             await search_by_city(update, context)
-            return
-        
-        elif text == "❤️ Лайк":
-            await handle_like(update, context)
             return
         
         elif text == "➡️ Далі":
@@ -556,6 +470,11 @@ async def initialize_bot_async():
     
     try:
         logger.info("🚀 Асинхронна ініціалізація бота...")
+        
+        # Ініціалізація конфігурації
+        from config import initialize_config
+        initialize_config()
+        from config import TOKEN
         
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()

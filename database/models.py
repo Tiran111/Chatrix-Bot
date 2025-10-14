@@ -161,7 +161,7 @@ class Database:
             # Оновлюємо rating для існуючих користувачів
             self.cursor.execute('UPDATE users SET rating = 5.0 WHERE rating IS NULL')
             
-            # Оновлюємо daily_likes_count для існуючих користувачів
+                        # Оновлюємо daily_likes_count для існуючих користувачів
             self.cursor.execute('UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL')
             
             self.conn.commit()
@@ -373,6 +373,10 @@ class Database:
                 params.append(f'%{city}%')
                 logger.info(f"🔍 [SEARCH DEBUG] Фільтр за містом: {city}")
             
+            # Виключаємо вже лайкнутих користувачів
+            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = ?)'
+            params.append(current_user_id)
+            
             query += ' ORDER BY RANDOM() LIMIT 1'
             
             logger.info(f"🔍 [SEARCH DEBUG] SQL: {query}")
@@ -418,6 +422,10 @@ class Database:
             if seeking_gender != 'all':
                 query += ' AND u.gender = ?'
                 params.append(seeking_gender)
+            
+            # Виключаємо вже лайкнутих користувачів
+            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = ?)'
+            params.append(current_user_id)
             
             query += ' ORDER BY RANDOM() LIMIT 20'
             
@@ -523,7 +531,7 @@ class Database:
                 self.cursor.execute('''
                     INSERT OR IGNORE INTO matches (user1_id, user2_id)
                     VALUES (?, ?)
-                ''', (min(from_user_id, to_user_id), max(from_user_id, to_user_id)))
+                ''', (min(from_user[0], to_user[0]), max(from_user[0], to_user[0])))
                 self.conn.commit()
             
             return True, "Лайк додано" if not is_mutual else "Лайк додано! 💕 У вас матч!"
@@ -542,9 +550,9 @@ class Database:
             
             self.cursor.execute('''
                 SELECT DISTINCT u.* FROM users u
-                JOIN matches m ON (u.telegram_id = m.user1_id OR u.telegram_id = m.user2_id)
-                WHERE (m.user1_id = ? OR m.user2_id = ?) AND u.telegram_id != ?
-            ''', (telegram_id, telegram_id, telegram_id))
+                JOIN matches m ON (u.id = m.user1_id OR u.id = m.user2_id)
+                WHERE (m.user1_id = ? OR m.user2_id = ?) AND u.id != ?
+            ''', (user[0], user[0], user[0]))
             
             matches = self.cursor.fetchall()
             return matches
@@ -580,6 +588,11 @@ class Database:
     def get_user_likers(self, telegram_id):
         """Отримати список користувачів, які лайкнули поточного користувача"""
         try:
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
+            user = self.cursor.fetchone()
+            if not user:
+                return []
+            
             self.cursor.execute('''
                 SELECT u.* FROM users u
                 JOIN likes l ON u.id = l.from_user_id
