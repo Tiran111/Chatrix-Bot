@@ -355,12 +355,12 @@ async def process_update(update):
     except Exception as e:
         logger.error(f"❌ Помилка обробки оновлення: {e}")
 
-def init_bot():
-    """Ініціалізація бота"""
+async def initialize_bot_async():
+    """Асинхронна ініціалізація бота"""
     global application
     
     try:
-        logger.info("🚀 Ініціалізація бота...")
+        logger.info("🚀 Асинхронна ініціалізація бота...")
         
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
@@ -370,15 +370,27 @@ def init_bot():
         setup_handlers(application)
         logger.info("✅ Обробники налаштовано")
         
-        # Встановлюємо webhook через event loop
-        future = asyncio.run_coroutine_threadsafe(application.bot.set_webhook(WEBHOOK_URL), event_loop)
-        future.result(timeout=30)
+        # Ініціалізуємо бота
+        await application.initialize()
+        logger.info("✅ Бот ініціалізовано")
+        
+        # Встановлюємо webhook
+        await application.bot.set_webhook(WEBHOOK_URL)
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
-        logger.info("🤖 Бот успішно ініціалізовано!")
+        logger.info("🤖 Бот успішно ініціалізовано та готовий до роботи!")
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+
+def init_bot():
+    """Ініціалізація бота"""
+    try:
+        # Запускаємо асинхронну ініціалізацію через event loop
+        future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
+        future.result(timeout=30)
+    except Exception as e:
+        logger.error(f"❌ Помилка запуску бота: {e}", exc_info=True)
 
 # ========== FLASK ROUTES ==========
 
