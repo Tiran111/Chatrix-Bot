@@ -14,17 +14,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Вимкнути логи Flask/Werkzeug
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
-# Flask app для Render
 app = Flask(__name__)
 
-# Конфігурація
 WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 PORT = int(os.environ.get('PORT', 10000))
 
-# Глобальна змінна для бота
 application = None
 event_loop = None
 bot_initialized = False
@@ -44,14 +40,12 @@ def validate_environment():
         logger.error(error_msg)
         raise ValueError(error_msg)
     
-    # Перевірка формату токена
     token = os.environ.get('BOT_TOKEN')
     if not token or token == 'your_bot_token_here':
         error_msg = "❌ Ви використовуєте тестовий токен. Встановіть реальний токен бота."
         logger.error(error_msg)
         raise ValueError(error_msg)
     
-    # Перевірка ADMIN_ID
     try:
         admin_id = int(os.environ.get('ADMIN_ID', 0))
         if admin_id == 0:
@@ -68,7 +62,6 @@ def run_async_tasks():
     asyncio.set_event_loop(event_loop)
     event_loop.run_forever()
 
-# Запускаємо event loop в окремому потоці
 async_thread = threading.Thread(target=run_async_tasks, daemon=True)
 async_thread.start()
 
@@ -76,11 +69,9 @@ def setup_handlers(app_instance):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
-    # Імпорт обробників після ініціалізації конфігурації
     from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_callback, handle_like_back
+    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_callback, handle_next_profile_callback, handle_like_back
     from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
-    from handlers.notifications import notification_system
     from keyboards.main_menu import get_main_menu
     
     # Команди
@@ -105,39 +96,25 @@ def setup_handlers(app_instance):
     
     # Callback обробники - ВИПРАВЛЕНО
     app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
     app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
     app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
 
-    # Обробник помилок
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
 
 async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка лайку з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        callback_data = query.data
-        
-        # Отримуємо ID користувача з callback_data
-        target_user_id = int(callback_data.split('_')[1])
-        
-        # Імпорт після ініціалізації
-        from handlers.search import handle_like_callback as like_handler
-        await like_handler(update, context)
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки лайку: {e}")
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
-        except:
-            pass
+    from handlers.search import handle_like_callback as like_handler
+    await like_handler(update, context)
+
+async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка кнопки 'Далі' з callback"""
+    from handlers.search import handle_next_profile_callback as next_handler
+    await next_handler(update, context)
 
 async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка взаємного лайку з callback"""
@@ -146,11 +123,8 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
         await query.answer()
         
         callback_data = query.data
-        
-        # Отримуємо ID користувача з callback_data
         user_id = int(callback_data.split('_')[2])
         
-        # Імпорт після ініціалізації
         from handlers.search import handle_like_back
         await handle_like_back(update, context, user_id)
             
@@ -161,23 +135,6 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
         except:
             pass
 
-async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка кнопки 'Далі' з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        # Імпорт після ініціалізації
-        from handlers.search import show_next_profile
-        await show_next_profile(update, context)
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка.")
-        except:
-            pass
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
     try:
@@ -185,27 +142,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
         
-        # Імпорт після ініціалізації
         from database.models import db
         from keyboards.main_menu import get_main_menu
         from utils.states import user_states, States
         from config import ADMIN_ID
         
-        # Додаємо користувача в базу
         db.add_user(user.id, user.username, user.first_name)
         logger.info(f"✅ Користувач {user.id} доданий в базу")
         
-        # Скидаємо стан
         user_states[user.id] = States.START
         
-        # Вітання
         welcome_text = (
             f"👋 Вітаю, {user.first_name}!\n\n"
             f"💞 *Chatrix* — це бот для знайомств!\n\n"
             f"🎯 *Почнімо знайомство!*"
         )
         
-        # Перевіряємо чи заповнений профіль
         user_data, is_complete = db.get_user_profile(user.id)
         
         if not is_complete:
@@ -280,7 +232,6 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
         
-        # Відправляємо сповіщення адміну
         await notification_system.notify_contact_admin(context, user.id, message_text)
         
         await update.message.reply_text(
@@ -300,7 +251,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         text = update.message.text if update.message.text else ""
         
-        # Імпорт після ініціалізації
         from utils.states import user_states, States
         from database.models import db
         from handlers.profile import handle_profile_message, handle_main_photo
@@ -313,29 +263,24 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         state = user_states.get(user.id, States.START)
 
-        # Скасування
         if text == "🔙 Скасувати":
             user_states[user.id] = States.START
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
 
-        # Зв'язок з адміном
         if state == States.CONTACT_ADMIN:
             await handle_contact_message(update, context)
             return
 
-        # Додавання фото
         if state == States.ADD_MAIN_PHOTO:
             await handle_main_photo(update, context)
             return
 
-        # Стани профілю
         if state in [States.PROFILE_AGE, States.PROFILE_GENDER, States.PROFILE_SEEKING_GENDER, 
                      States.PROFILE_CITY, States.PROFILE_GOAL, States.PROFILE_BIO]:
             await handle_profile_message(update, context)
             return
         
-        # Пошук по місту
         if context.user_data.get('waiting_for_city'):
             clean_city = text.replace('🏙️ ', '').strip()
             users = db.get_users_by_city(clean_city, user.id)
@@ -355,7 +300,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['waiting_for_city'] = False
             return
         
-        # Обробка станів адміна
         if user.id == ADMIN_ID:
             admin_state = user_states.get(user.id)
             if admin_state == States.ADMIN_BAN_USER:
@@ -371,7 +315,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await handle_user_search(update, context)
                 return
         
-        # Адмін-меню
         if user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 from handlers.admin import handle_admin_actions
@@ -391,7 +334,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await show_admin_panel(update, context)
                 return
         
-        # Обробка команд меню
         if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
             await start_profile_creation(update, context)
             return
@@ -437,7 +379,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await contact_admin(update, context)
             return
         
-        # Якщо нічого не підійшло
         await update.message.reply_text(
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
             reply_markup=get_main_menu(user.id)
@@ -471,24 +412,19 @@ async def initialize_bot_async():
     try:
         logger.info("🚀 Асинхронна ініціалізація бота...")
         
-        # Ініціалізація конфігурації
         from config import initialize_config
         initialize_config()
         from config import TOKEN
         
-        # Створюємо бота
         application = Application.builder().token(TOKEN).build()
         logger.info("✅ Application створено")
         
-        # Налаштовуємо обробники
         setup_handlers(application)
         logger.info("✅ Обробники налаштовано")
         
-        # Ініціалізуємо бота
         await application.initialize()
         logger.info("✅ Бот ініціалізовано")
         
-        # Встановлюємо webhook
         await application.bot.set_webhook(WEBHOOK_URL)
         logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
         
@@ -508,11 +444,9 @@ def init_bot():
     bot_initialization_started = True
     
     try:
-        # Перевіряємо змінні середовища
         validate_environment()
         
-        # Чекаємо поки event loop буде готовий
-        max_wait_time = 10  # секунд
+        max_wait_time = 10
         start_time = time.time()
         
         while event_loop is None and (time.time() - start_time) < max_wait_time:
@@ -525,19 +459,15 @@ def init_bot():
         
         logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
         
-        # Запускаємо асинхронну ініціалізацію через event loop
         future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=30)  # Чекаємо до 30 секунд
+        future.result(timeout=30)
         logger.info("✅ Бот успішно ініціалізовано")
         
     except Exception as e:
         logger.error(f"❌ Помилка запуску бота: {e}", exc_info=True)
 
-# ========== FLASK ROUTES ==========
-
 @app.route('/')
 def home():
-    # Ініціалізуємо бота при першому запиті
     if not bot_initialization_started:
         init_bot()
     return "🤖 Chatrix Bot is running!"
@@ -556,23 +486,19 @@ def ping():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook для Telegram"""
     try:
         logger.info("📨 Отримано webhook запит від Telegram")
         
-        # Якщо бот ще не ініціалізований, спробуємо ініціалізувати
         if not bot_initialized or application is None:
             logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
             
-            # Чекаємо трохи на ініціалізацію
             time.sleep(2)
             
             if not bot_initialized or application is None:
                 logger.error("❌ Бот все ще не ініціалізований")
                 return "Bot not initialized", 500
             
-        # Отримуємо оновлення від Telegram
         update_data = request.get_json()
         
         if update_data is None:
@@ -581,7 +507,6 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # Обробляємо оновлення через event loop
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
@@ -593,14 +518,12 @@ def webhook():
 
 @app.route('/set_webhook')
 def set_webhook_route():
-    """Встановити webhook через HTTP запит"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
         if not bot_initialized:
             init_bot()
             return "🔄 Бот ініціалізується... Спробуйте ще раз через кілька секунд."
         
-        # Перевіряємо стан webhook
         future = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
         webhook_info = future.result(timeout=30)
         
@@ -612,13 +535,9 @@ def set_webhook_route():
         logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
-# ========== ЗАПУСК СЕРВЕРА ==========
-
 if __name__ == "__main__":
-    # Ініціалізуємо бота
     logger.info("🚀 Запуск додатку...")
     init_bot()
     
-    # Запускаємо Flask сервер
     logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
     app.run(host='0.0.0.0', port=PORT, debug=False)
