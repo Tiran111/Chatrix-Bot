@@ -15,7 +15,7 @@ from config import TOKEN, ADMIN_ID
 
 # Імпорт обробників
 from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_back
+from handlers.search import search_profiles, search_by_city, handle_like, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
 from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
 from handlers.notifications import notification_system
 
@@ -78,8 +78,8 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
-    # Callback обробники
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
+    # Callback обробники - використовуємо універсальний обробник для like_back
+    app_instance.add_handler(CallbackQueryHandler(universal_callback_handler, pattern='^like_back_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -88,6 +88,64 @@ def setup_handlers(app_instance):
     # Обробник помилок
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
+
+async def universal_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Універсальний обробник callback запитів"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        callback_data = query.data
+        
+        # Обробка like_back callback
+        if callback_data.startswith('like_back_'):
+            user_id = int(callback_data.split('_')[2])
+            await handle_like_back(update, context, user_id)
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка в universal_callback_handler: {e}")
+
+async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Обробка лайку назад"""
+    try:
+        query = update.callback_query
+        current_user_id = query.from_user.id
+        
+        # Додаємо лайк в базу
+        db.add_like(current_user_id, user_id)
+        
+        # Перевіряємо чи це взаємний лайк
+        if db.has_like(user_id, current_user_id):
+            # Це матч!
+            match_text = "🎉 У вас новий матч! Обидві сторони поставили лайки один одному."
+            
+            # Сповіщаємо поточного користувача
+            await query.edit_message_text(
+                f"{match_text}\n\n💞 Тепер ви можете спілкуватися!",
+                reply_markup=None
+            )
+            
+            # Сповіщаємо іншого користувача
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"🎉 У вас новий матч з користувачем! Перевіть свої матчі в меню."
+                )
+            except Exception as e:
+                logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
+        else:
+            # Просто лайк
+            await query.edit_message_text(
+                "❤️ Ви відправили лайк! Очікуйте на взаємність.",
+                reply_markup=None
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка в handle_like_back: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
+        except:
+            pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
