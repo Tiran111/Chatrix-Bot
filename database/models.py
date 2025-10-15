@@ -730,8 +730,16 @@ class Database:
             return []
 
     def cleanup_old_data(self):
-        """Очищення старих даних"""
+        """Очищення старих даних з детальним логуванням"""
         try:
+            # Рахуємо кількість записів перед очищенням
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE age IS NULL AND created_at < datetime("now", "-30 days")')
+            old_incomplete = self.cursor.fetchone()[0]
+            
+            self.cursor.execute('SELECT COUNT(*) FROM likes WHERE created_at < datetime("now", "-90 days")')
+            old_likes = self.cursor.fetchone()[0]
+            
+            # Виконуємо очищення
             self.cursor.execute('''
                 DELETE FROM users 
                 WHERE age IS NULL AND created_at < datetime('now', '-30 days')
@@ -742,9 +750,24 @@ class Database:
                 WHERE created_at < datetime('now', '-90 days')
             ''')
             
+            # Оновлюємо статистику рейтингів
+            self.cursor.execute('SELECT telegram_id FROM users WHERE age IS NOT NULL')
+            active_users = self.cursor.fetchall()
+            
+            for user in active_users:
+                self.calculate_user_rating(user[0])
+            
             self.conn.commit()
-            logger.info("✅ Старі дані очищено")
-            return True
+            
+            logger.info(f"✅ Очищено старих даних: {old_incomplete} неповних профілів, {old_likes} лайків")
+            logger.info(f"📊 Оновлено рейтинги для {len(active_users)} активних користувачів")
+            
+            return {
+                'deleted_incomplete': old_incomplete,
+                'deleted_likes': old_likes,
+                'updated_ratings': len(active_users)
+            }
+            
         except Exception as e:
             logger.error(f"❌ Помилка очищення даних: {e}")
             return False
@@ -829,69 +852,13 @@ class Database:
                 return dict(user)
             return None
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача: {e}")
+            logger.error(f"❌ Помилка отримання користувача за ID: {e}")
             return None
 
-    def update_user_name(self, telegram_id, first_name):
-        """Оновити ім'я користувача"""
-        try:
-            self.cursor.execute('''
-                UPDATE users SET first_name = ? WHERE telegram_id = ?
-            ''', (first_name, telegram_id))
-            self.conn.commit()
-            logger.info(f"✅ Ім'я оновлено для {telegram_id}: {first_name}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення імені: {e}")
-            return False
-
-    def add_profile_view(self, viewer_id, viewed_user_id):
-        """Додати запис про перегляд профілю"""
-        try:
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (viewer_id,))
-            viewer = self.cursor.fetchone()
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (viewed_user_id,))
-            viewed = self.cursor.fetchone()
-            
-            if viewer and viewed:
-                self.cursor.execute('''
-                    INSERT INTO profile_views (viewer_id, viewed_user_id)
-                    VALUES (?, ?)
-                ''', (viewer[0], viewed[0]))
-                self.conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"❌ Помилка додавання перегляду: {e}")
-        return False
-
-    def debug_user_profile(self, telegram_id):
-        """Відладка профілю користувача"""
-        try:
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
-            user = self.cursor.fetchone()
-            
-            if user:
-                logger.info(f"🔍 [DEBUG USER] ID: {user[1]}")
-                logger.info(f"🔍 [DEBUG USER] Ім'я: {user[3]}")
-                logger.info(f"🔍 [DEBUG USER] Вік: {user[4]}")
-                logger.info(f"🔍 [DEBUG USER] Стать: {user[5]}")
-                logger.info(f"🔍 [DEBUG USER] Місто: {user[6]}")
-                logger.info(f"🔍 [DEBUG USER] Фото: {user[10]}")
-                logger.info(f"🔍 [DEBUG USER] Лайків: {user[12]}")
-                logger.info(f"🔍 [DEBUG USER] Рейтинг: {user[14]}")
-                logger.info(f"🔍 [DEBUG USER] Заблокований: {user[13]}")
-                return True
-            else:
-                logger.info(f"🔍 [DEBUG USER] Користувача {telegram_id} не знайдено")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Помилка відладки: {e}")
-            return False
-
-    def calculate_user_rating(self, user_id):
+    def calculate_user_rating(self, telegram_id):
         """Розрахунок рейтингу користувача"""
         try:
-            user = self.get_user(user_id)
+            user = self.get_user(telegram_id)
             if not user:
                 return 5.0
             
@@ -907,26 +874,17 @@ class Database:
             likes_count = user.get('likes_count', 0)
             bonus += min(likes_count * 0.1, 3.0)
             
-            if user.get('last_active'):
-                try:
-                    last_active = datetime.fromisoformat(user['last_active'].replace('Z', '+00:00'))
-                    days_since_active = (datetime.now() - last_active).days
-                    if days_since_active <= 7:
-                        bonus += 0.5
-                except Exception as e:
-                    logger.error(f"❌ Помилка обробки last_active: {e}")
-
             new_rating = min(base_rating + bonus, 10.0)
             
-            self.cursor.execute('UPDATE users SET rating = ? WHERE telegram_id = ?', (new_rating, user_id))
+            self.cursor.execute('UPDATE users SET rating = ? WHERE telegram_id = ?', (new_rating, telegram_id))
             self.conn.commit()
             
-            logger.info(f"✅ Рейтинг розраховано для {user_id}: {new_rating}")
+            logger.info(f"✅ Рейтинг розраховано для {telegram_id}: {new_rating}")
             return new_rating
             
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
 
-# Глобальний об'єкт бази даних
+# Глобальний екземпляр бази даних
 db = Database()
