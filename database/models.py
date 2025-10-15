@@ -240,15 +240,27 @@ class Database:
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:
-            self.cursor.execute('''
-                INSERT OR REPLACE INTO users (telegram_id, username, first_name)
-                VALUES (?, ?, ?)
-            ''', (telegram_id, username, first_name))
+            # Спочатку перевіряємо чи користувач вже існує
+            existing_user = self.get_user(telegram_id)
+            if existing_user:
+                logger.info(f"🔄 Користувач {telegram_id} вже існує, оновлюємо дані")
+                # Оновлюємо дані користувача
+                self.cursor.execute('''
+                    UPDATE users SET username = ?, first_name = ?, last_active = CURRENT_TIMESTAMP 
+                    WHERE telegram_id = ?
+                ''', (username, first_name, telegram_id))
+            else:
+                # Додаємо нового користувача
+                self.cursor.execute('''
+                    INSERT INTO users (telegram_id, username, first_name) 
+                    VALUES (?, ?, ?)
+                ''', (telegram_id, username, first_name))
+            
             self.conn.commit()
             logger.info(f"✅ Користувач доданий/оновлений: {telegram_id} - {first_name}")
             return True
         except Exception as e:
-            logger.error(f"❌ Помилка додавання користувача: {e}")
+            logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
             return False
 
     def get_user(self, telegram_id):
@@ -257,10 +269,14 @@ class Database:
             self.cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
             user = self.cursor.fetchone()
             if user:
-                return dict(user)
-            return None
+                user_dict = dict(user)
+                logger.info(f"🔍 [GET USER] Знайдено користувача {telegram_id}: {user_dict.get('first_name', 'Невідомо')}")
+                return user_dict
+            else:
+                logger.warning(f"⚠️ [GET USER] Користувача {telegram_id} не знайдено")
+                return None
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача: {e}")
+            logger.error(f"❌ Помилка отримання користувача {telegram_id}: {e}")
             return None
     
     def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
@@ -323,30 +339,47 @@ class Database:
         try:
             logger.info(f"🔄 Додаємо фото для {telegram_id}")
             
+            # Спочатку перевіряємо чи користувач існує
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
             user = self.cursor.fetchone()
             
             if not user:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено")
-                return False
+                logger.warning(f"⚠️ Користувача {telegram_id} не знайдено, спробуємо створити")
+                
+                # Створюємо користувача з базовими даними
+                success = self.add_user(telegram_id, None, "Користувач")
+                if not success:
+                    logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
+                    return False
+                    
+                # Повторно отримуємо користувача
+                self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
+                user = self.cursor.fetchone()
+                
+                if not user:
+                    logger.error(f"❌ Користувача {telegram_id} все ще не знайдено після створення")
+                    return False
             
             user_id = user[0]
             
+            # Перевіряємо кількість фото
             current_photos = self.get_profile_photos(telegram_id)
             if len(current_photos) >= 3:
                 logger.error("❌ Досягнуто ліміт фото (максимум 3)")
                 return False
             
+            # Додаємо фото
             self.cursor.execute('INSERT INTO photos (user_id, file_id) VALUES (?, ?)', (user_id, file_id))
             self.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = ?', (telegram_id,))
             self.update_user_rating(telegram_id)
             
             self.conn.commit()
-            logger.info("✅ Фото успішно додано до бази даних!")
+            logger.info(f"✅ Фото успішно додано для користувача {telegram_id}!")
             return True
             
         except Exception as e:
             logger.error(f"❌ Помилка додавання фото: {e}")
+            self.conn.rollback()
             return False
     
     def get_main_photo(self, telegram_id):
