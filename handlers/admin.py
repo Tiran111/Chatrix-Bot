@@ -7,6 +7,7 @@ from config import ADMIN_ID
 from handlers.notifications import notification_system
 import logging
 import time
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +250,8 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
             else:
                 fail_count += 1
                 
-            time.sleep(0.1)  # Затримка щоб не перевищити ліміти
+            # Невелика затримка щоб не перевищити ліміти Telegram
+            await asyncio.sleep(0.1)
         except Exception as e:
             logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
             fail_count += 1

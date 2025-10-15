@@ -1,4 +1,4 @@
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from telegram.ext import CallbackContext
 from database.models import db
 from keyboards.main_menu import get_main_menu
@@ -151,147 +151,38 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
     
     try:
         if main_photo:
-            await update.message.reply_photo(
-                photo=main_photo, 
-                caption=profile_text,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
+            # Якщо це callback query - редагуємо повідомлення
+            if hasattr(update, 'callback_query') and update.callback_query:
+                await update.callback_query.edit_message_media(
+                    media=InputMediaPhoto(main_photo, caption=profile_text, parse_mode='Markdown'),
+                    reply_markup=keyboard
+                )
+            else:
+                await update.message.reply_photo(
+                    photo=main_photo, 
+                    caption=profile_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
         else:
-            await update.message.reply_text(
-                profile_text,
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
+            if hasattr(update, 'callback_query') and update.callback_query:
+                await update.callback_query.edit_message_text(
+                    profile_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    profile_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
     except Exception as e:
         logger.error(f"❌ Помилка відправки профілю: {e}")
         await update.message.reply_text(
             "❌ Помилка завантаження профілю. Спробуйте ще раз.",
             reply_markup=get_main_menu(user.id)
         )
-
-async def handle_like(update: Update, context: CallbackContext):
-    """Обробка лайку з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        callback_data = query.data
-        
-        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data}")
-        
-        # Отримуємо ID користувача з callback_data
-        target_user_id = int(callback_data.split('_')[1])
-        
-        # Додаємо лайк з перевіркою обмежень
-        success, message = db.add_like(user.id, target_user_id)
-        
-        if success:
-            # Перевіряємо чи це взаємний лайк (матч)
-            is_mutual = db.has_liked(target_user_id, user.id)
-            
-            if is_mutual:
-                # Відправляємо сповіщення про матч
-                await notification_system.notify_new_match(context, user.id, target_user_id)
-                
-                # Отримуємо дані користувача для кнопки переходу в Telegram
-                matched_user = db.get_user(target_user_id)
-                if matched_user:
-                    username = matched_user.get('username')
-                    if username:
-                        # Створюємо кнопку для переходу в Telegram
-                        keyboard = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
-                        ])
-                        await query.edit_message_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            "💬 *Тепер ви можете почати спілкування!*",
-                            reply_markup=keyboard,
-                            parse_mode='Markdown'
-                        )
-                    else:
-                        await query.edit_message_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            "ℹ️ *У цього користувача немає username*",
-                            parse_mode='Markdown'
-                        )
-                else:
-                    await query.edit_message_text("💕 У вас матч! Ви вподобали один одного!")
-            else:
-                # Відправляємо сповіщення про лайк
-                await notification_system.notify_new_like(context, user.id, target_user_id)
-                await query.edit_message_text(f"❤️ {message}")
-        else:
-            await query.edit_message_text(f"❌ {message}")
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки лайку: {e}")
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
-        except:
-            pass
-
-async def handle_next(update: Update, context: CallbackContext):
-    """Обробка кнопки 'Далі' з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        
-        logger.info(f"🔍 [NEXT CALLBACK] Обробка кнопки 'Далі' для {user.id}")
-        
-        search_users = context.user_data.get('search_users', [])
-        current_index = context.user_data.get('current_index', 0)
-        search_type = context.user_data.get('search_type', 'random')
-        
-        logger.info(f"🔍 [NEXT CALLBACK] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
-        
-        if not search_users:
-            await query.edit_message_text("🔄 Шукаємо нові анкети...")
-            await search_profiles(update, context)
-            return
-        
-        # Якщо це пошук за містом, шукаємо наступного користувача
-        if search_type == 'city':
-            if current_index < len(search_users) - 1:
-                current_index += 1
-                context.user_data['current_index'] = current_index
-                user_data = search_users[current_index]
-                
-                # Додаємо запис про перегляд профілю
-                db.add_profile_view(user.id, user_data[1])
-                
-                await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
-            else:
-                await query.edit_message_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
-        else:
-            # Для випадкового пошуку - шукаємо нову анкету
-            random_user = db.get_random_user(user.id)
-            if random_user:
-                # Додаємо запис про перегляд профілю
-                db.add_profile_view(user.id, random_user[1])
-                
-                await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
-                context.user_data['search_users'] = [random_user]
-                context.user_data['current_index'] = 0
-            else:
-                await query.edit_message_text(
-                    "😔 Більше немає анкет для перегляду\n\n"
-                    "💡 Спробуйте:\n"
-                    "• Змінити критерії пошуку\n"
-                    "• Пошукати за іншим містом\n"
-                    "• Зачекати поки з'являться нові користувачі",
-                    reply_markup=get_main_menu(user.id)
-                )
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка.")
-        except:
-            pass
 
 async def show_next_profile(update: Update, context: CallbackContext):
     """Наступний профіль (для текстової кнопки)"""
@@ -613,3 +504,178 @@ async def handle_top_selection(update: Update, context: CallbackContext):
             f"💡 *Порада:* Заповніть профіль повністю та додайте фото, щоб потрапити в топ!",
             reply_markup=get_main_menu(user.id)
         )
+
+# Додаткові функції для розширеного пошуку
+async def start_advanced_search(update: Update, context: CallbackContext):
+    """Початок розширеного пошуку"""
+    user = update.effective_user
+    
+    user_data = db.get_user(user.id)
+    if user_data and user_data.get('is_banned'):
+        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        return
+    
+    user_data, is_complete = db.get_user_profile(user.id)
+    
+    if not is_complete:
+        await update.message.reply_text("❌ Спочатку заповніть профіль!", reply_markup=get_main_menu(user.id))
+        return
+    
+    keyboard = [
+        ['👩 Дівчата', '👨 Хлопці'],
+        ['👫 Всі', '🔙 Меню']
+    ]
+    
+    await update.message.reply_text(
+        "🔍 *Розширений пошук*\n\nОберіть стать для пошуку:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+        parse_mode='Markdown'
+    )
+    user_states[user.id] = States.ADVANCED_SEARCH_GENDER
+
+async def handle_advanced_search_gender(update: Update, context: CallbackContext):
+    """Обробка вибору статі для розширеного пошуку"""
+    user = update.effective_user
+    text = update.message.text
+    
+    if user_states.get(user.id) != States.ADVANCED_SEARCH_GENDER:
+        await update.message.reply_text("❌ Будь ласка, почніть пошук спочатку", reply_markup=get_main_menu(user.id))
+        return
+    
+    if not context.user_data.get('advanced_search'):
+        context.user_data['advanced_search'] = {}
+    
+    if text == "👩 Дівчата":
+        context.user_data['advanced_search']['gender'] = 'female'
+        gender_display = "👩 Дівчата"
+    elif text == "👨 Хлопці":
+        context.user_data['advanced_search']['gender'] = 'male'
+        gender_display = "👨 Хлопці"
+    else:
+        context.user_data['advanced_search']['gender'] = 'all'
+        gender_display = "👫 Всі"
+    
+    user_states[user.id] = States.ADVANCED_SEARCH_CITY
+    
+    keyboard = [
+        ['🏙️ Київ', '🏙️ Львів', '🏙️ Одеса'],
+        ['🏙️ Харків', '🏙️ Дніпро', '🏙️ Запоріжжя'],
+        ['✏️ Ввести інше місто', '🔙 Меню']
+    ]
+    
+    await update.message.reply_text(
+        f"✅ Стать: {gender_display}\n\n🏙️ Тепер оберіть місто для пошуку:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+        parse_mode='Markdown'
+    )
+
+async def handle_advanced_search_city(update: Update, context: CallbackContext):
+    """Обробка вибору міста для розширеного пошуку"""
+    user = update.effective_user
+    text = update.message.text
+    
+    if user_states.get(user.id) != States.ADVANCED_SEARCH_CITY:
+        await update.message.reply_text("❌ Будь ласка, почніть пошук спочатку", reply_markup=get_main_menu(user.id))
+        return
+    
+    if text == "✏️ Ввести інше місто":
+        user_states[user.id] = States.ADVANCED_SEARCH_CITY_INPUT
+        await update.message.reply_text(
+            "🏙️ Введіть назву міста:",
+            reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
+        )
+        return
+    
+    city = text.replace('🏙️ ', '').strip()
+    context.user_data['advanced_search']['city'] = city
+    user_states[user.id] = States.ADVANCED_SEARCH_GOAL
+    
+    keyboard = [
+        ['💞 Серйозні стосунки', '👥 Дружба'],
+        ['🎉 Разові зустрічі', '🏃 Активний відпочинок'],
+        ['🔙 Меню']
+    ]
+    
+    await update.message.reply_text(
+        f"✅ Стать: {get_gender_display(context.user_data['advanced_search']['gender'])}\n"
+        f"✅ Місто: {city}\n\n"
+        "🎯 Тепер оберіть ціль знайомства:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+        parse_mode='Markdown'
+    )
+
+async def handle_advanced_search_goal(update: Update, context: CallbackContext):
+    """Обробка вибору цілі та виконання пошуку"""
+    user = update.effective_user
+    text = update.message.text
+    
+    if user_states.get(user.id) != States.ADVANCED_SEARCH_GOAL:
+        await update.message.reply_text("❌ Будь ласка, почніть пошук спочатку", reply_markup=get_main_menu(user.id))
+        return
+    
+    goal_map = {
+        '💞 Серйозні стосунки': 'Серйозні стосунки',
+        '👥 Дружба': 'Дружба',
+        '🎉 Разові зустрічі': 'Разові зустрічі',
+        '🏃 Активний відпочинок': 'Активний відпочинок'
+    }
+    
+    goal = goal_map.get(text)
+    if not goal:
+        await update.message.reply_text("❌ Будь ласка, оберіть ціль зі списку", reply_markup=get_main_menu(user.id))
+        return
+    
+    context.user_data['advanced_search']['goal'] = goal
+    await execute_advanced_search(update, context)
+
+async def execute_advanced_search(update: Update, context: CallbackContext):
+    """Виконання розширеного пошуку"""
+    user = update.effective_user
+    search_data = context.user_data.get('advanced_search', {})
+    
+    if not search_data:
+        await update.message.reply_text("❌ Помилка пошуку. Спробуйте ще раз.", reply_markup=get_main_menu(user.id))
+        return
+    
+    gender = search_data.get('gender', 'all')
+    city = search_data.get('city', '')
+    goal = search_data.get('goal', '')
+    
+    users = db.search_users_advanced(user.id, gender, city, goal)
+    
+    context.user_data['search_users'] = users
+    context.user_data['current_index'] = 0
+    context.user_data['search_type'] = 'advanced'
+    
+    user_states[user.id] = States.START
+    
+    if users:
+        user_data = users[0]
+        
+        search_info = (
+            f"🔍 *Результати розширеного пошуку:*\n"
+            f"• Стать: {get_gender_display(gender)}\n"
+            f"• Місто: {city}\n"
+            f"• Ціль: {goal}\n"
+            f"• Знайдено: {len(users)} анкет\n"
+        )
+        
+        await show_user_profile(update, context, user_data, search_info)
+    else:
+        await update.message.reply_text(
+            f"😔 Не знайдено анкет за вашими критеріями:\n"
+            f"• Стать: {get_gender_display(gender)}\n"
+            f"• Місто: {city}\n"
+            f"• Ціль: {goal}",
+            reply_markup=get_main_menu(user.id),
+            parse_mode='Markdown'
+        )
+
+def get_gender_display(gender):
+    """Повертає відображення статі"""
+    if gender == 'female':
+        return "👩 Дівчата"
+    elif gender == 'male':
+        return "👨 Хлопці"
+    else:
+        return "👫 Всі"
