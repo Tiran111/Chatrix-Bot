@@ -24,16 +24,16 @@ def get_bot_token():
         raise ValueError("❌ BOT_TOKEN не встановлено або використовується тестовий токен")
     return token
 
-# ЗМІНА: заміни TOKEN на BOT_TOKEN
-BOT_TOKEN = None
+# Глобальні змінні будуть встановлені пізніше
+TOKEN = None
 ADMIN_ID = None
 
 def initialize_config():
     """Ініціалізація конфігурації (викликається після імпорту)"""
-    global BOT_TOKEN, ADMIN_ID  # ЗМІНА: заміни TOKEN на BOT_TOKEN
-    BOT_TOKEN = get_bot_token()  # ЗМІНА: заміни TOKEN на BOT_TOKEN
+    global TOKEN, ADMIN_ID
+    TOKEN = get_bot_token()
     ADMIN_ID = get_admin_id()
-    print(f"✅ Конфігурація ініціалізована: BOT_TOKEN={BOT_TOKEN[:10]}..., ADMIN_ID={ADMIN_ID}")  # ЗМІНА: заміни TOKEN на BOT_TOKEN
+    print(f"✅ Конфігурація ініціалізована: TOKEN={TOKEN[:10]}..., ADMIN_ID={ADMIN_ID}")
 
 # Налаштування бази даних
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///bot_database.db')
@@ -49,6 +49,3 @@ KEEP_ALIVE_INTERVAL = 300  # 5 хвилин
 MAX_PROFILE_LENGTH = 500
 MAX_BIO_LENGTH = 1000
 SEARCH_LIMIT = 50
-
-# Ініціалізація конфігурації при імпорті
-initialize_config()
