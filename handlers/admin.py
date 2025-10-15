@@ -102,29 +102,23 @@ async def handle_admin_actions(update: Update, context: CallbackContext):
         await show_admin_panel(update, context)
 
 async def reset_database(update: Update, context: CallbackContext):
-    """Скинути базу даних (тільки для тестування)"""
+    """Скинути базу даних"""
     user = update.effective_user
     if user.id != ADMIN_ID:
         return
     
     try:
-        await update.message.reply_text("🔄 Скидання бази даних...")
+        await update.message.reply_text("🔄 Скидання бази даних... Це може зайняти кілька секунд.")
         
-        # Видаляємо всі таблиці
-        db.cursor.execute('DROP TABLE IF EXISTS likes')
-        db.cursor.execute('DROP TABLE IF EXISTS matches')
-        db.cursor.execute('DROP TABLE IF EXISTS photos')
-        db.cursor.execute('DROP TABLE IF EXISTS profile_views')
-        db.cursor.execute('DROP TABLE IF EXISTS users')
-        db.conn.commit()
+        # Використовуємо метод з models.py
+        success = db.reset_database()
         
-        # Перестворюємо таблиці
-        db.init_db()
-        
-        await update.message.reply_text("✅ База даних скинута та перестворена!")
-        
-        # Показуємо оновлену статистику
-        await show_admin_panel(update, context)
+        if success:
+            await update.message.reply_text("✅ База даних скинута та перестворена!")
+            # Показуємо оновлену статистику
+            await show_admin_panel(update, context)
+        else:
+            await update.message.reply_text("❌ Помилка скидання БД")
         
     except Exception as e:
         logger.error(f"❌ Помилка скидання БД: {e}")

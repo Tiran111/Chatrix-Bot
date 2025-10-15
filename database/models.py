@@ -166,6 +166,29 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
 
+    def reset_database(self):
+        """Повне скидання бази даних"""
+        try:
+            logger.info("🔄 Повне скидання бази даних...")
+            
+            # Видаляємо всі таблиці
+            self.cursor.execute('DROP TABLE IF EXISTS likes')
+            self.cursor.execute('DROP TABLE IF EXISTS matches')
+            self.cursor.execute('DROP TABLE IF EXISTS photos')
+            self.cursor.execute('DROP TABLE IF EXISTS profile_views')
+            self.cursor.execute('DROP TABLE IF EXISTS users')
+            self.conn.commit()
+            
+            # Перестворюємо таблиці
+            self.init_db()
+            
+            logger.info("✅ База даних повністю скинута та перестворена")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання БД: {e}")
+            return False
+
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:

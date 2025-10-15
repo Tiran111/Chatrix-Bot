@@ -3,6 +3,7 @@ import os
 import asyncio
 import threading
 import time
+import requests
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
@@ -25,6 +26,23 @@ application = None
 event_loop = None
 bot_initialized = False
 bot_initialization_started = False
+
+def keep_alive():
+    """Функція для підтримки активності додатку"""
+    while True:
+        try:
+            # Відправляємо запит до нашого ж додатку
+            response = requests.get('https://chatrix-bot-4m1p.onrender.com/health')
+            logger.info(f"🔄 Keep-alive: {response.status_code}")
+        except Exception as e:
+            logger.error(f"❌ Keep-alive помилка: {e}")
+        
+        # Чекаємо 4 хвилини між запитами (менше ніж 5 хвилин холодного старту)
+        time.sleep(240)
+
+# Запускаємо keep-alive в окремому потоці
+keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+keep_alive_thread.start()
 
 def validate_environment():
     """Перевірка змінних середовища"""
@@ -661,6 +679,11 @@ def healthz():
 @app.route('/ping')
 def ping():
     return "pong", 200
+
+@app.route('/keepalive')
+def keepalive():
+    """Спеціальний ендпоінт для keep-alive"""
+    return "ALIVE", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
