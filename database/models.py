@@ -13,8 +13,79 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-        self.init_db()
-        self.update_database_structure()
+        
+        # Перевіряємо чи потрібно скинути БД
+        if self.needs_reset():
+            logger.info("🔄 Виявлено проблеми з БД, виконуємо автоматичне скидання...")
+            self.force_reset_database()
+        else:
+            self.init_db()
+            self.update_database_structure()
+
+    def needs_reset(self):
+        """Перевіряє чи потрібно скинути БД"""
+        try:
+            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            users_exists = self.cursor.fetchone() is not None
+            
+            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='likes'")
+            likes_exists = self.cursor.fetchone() is not None
+            
+            # Якщо немає таблиць або структура пошкоджена
+            if not users_exists or not likes_exists:
+                return True
+                
+            # Перевіряємо структуру таблиці users
+            self.cursor.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in self.cursor.fetchall()]
+            required_columns = ['telegram_id', 'first_name', 'gender', 'seeking_gender']
+            
+            for col in required_columns:
+                if col not in columns:
+                    logger.warning(f"❌ Відсутній обов'язковий стовпець: {col}")
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка перевірки БД: {e}")
+            return True
+
+    def force_reset_database(self):
+        """Примусове скидання бази даних"""
+        try:
+            logger.info("🔄 Примусове скидання бази даних...")
+            
+            # Закриваємо з'єднання
+            self.conn.close()
+            
+            # Видаляємо файл БД
+            if os.path.exists(DATABASE_PATH):
+                os.remove(DATABASE_PATH)
+                logger.info("✅ Файл БД видалено")
+            
+            # Перестворюємо з'єднання
+            self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self.cursor = self.conn.cursor()
+            
+            # Ініціалізуємо БД
+            self.init_db()
+            logger.info("✅ База даних повністю скинута та перестворена")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання БД: {e}")
+            # Спробуємо створити нову БД навіть якщо видалення не вдалося
+            try:
+                self.init_db()
+                return True
+            except:
+                return False
+
+    def reset_database(self):
+        """Скидання бази даних через адмінку"""
+        return self.force_reset_database()
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
@@ -165,29 +236,6 @@ class Database:
             
         except Exception as e:
             logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
-
-    def reset_database(self):
-        """Повне скидання бази даних"""
-        try:
-            logger.info("🔄 Повне скидання бази даних...")
-            
-            # Видаляємо всі таблиці
-            self.cursor.execute('DROP TABLE IF EXISTS likes')
-            self.cursor.execute('DROP TABLE IF EXISTS matches')
-            self.cursor.execute('DROP TABLE IF EXISTS photos')
-            self.cursor.execute('DROP TABLE IF EXISTS profile_views')
-            self.cursor.execute('DROP TABLE IF EXISTS users')
-            self.conn.commit()
-            
-            # Перестворюємо таблиці
-            self.init_db()
-            
-            logger.info("✅ База даних повністю скинута та перестворена")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка скидання БД: {e}")
-            return False
 
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
