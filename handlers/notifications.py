@@ -4,6 +4,7 @@ from database.models import db
 from keyboards.main_menu import get_main_menu
 import asyncio
 import logging
+from datetime import datetime
 from config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,24 @@ class NotificationSystem:
             )
         except Exception as e:
             logger.error(f"❌ Помилка сповіщення про розсилку: {e}")
+    
+    async def notify_broadcast_started(self, context: ContextTypes.DEFAULT_TYPE, admin_id, total_users):
+        """Сповістити адміна про початок розсилки"""
+        try:
+            message = (
+                f"📢 *Розсилка розпочата*\n\n"
+                f"📊 Кількість одержувачів: {total_users}\n"
+                f"⏳ Початок: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            logger.info(f"✅ Сповіщення про початок розсилки відправлено адміну {admin_id}")
+        except Exception as e:
+            logger.error(f"❌ Помилка сповіщення про початок розсилки: {e}")
     
     async def notify_broadcast_complete(self, context: ContextTypes.DEFAULT_TYPE, admin_id, success_count, total_count):
         """Сповістити адміна про завершення розсилки"""

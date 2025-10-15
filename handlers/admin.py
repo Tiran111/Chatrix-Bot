@@ -253,6 +253,7 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
         return
     
     await update.message.reply_text(f"🔄 Розсилка повідомлення {len(users)} користувачам...")
+    await notification_system.notify_broadcast_started(context, user.id, len(users))
     
     success_count = 0
     fail_count = 0
