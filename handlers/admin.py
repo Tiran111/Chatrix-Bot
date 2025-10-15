@@ -111,7 +111,7 @@ async def reset_database(update: Update, context: CallbackContext):
         await update.message.reply_text("🔄 Скидання бази даних... Це може зайняти кілька секунд.")
         
         # Використовуємо метод з models.py
-        success = db.reset_database()
+        success = db.force_reset_database()
         
         if success:
             await update.message.reply_text("✅ База даних скинута та перестворена!\n\n📝 Тепер потрібно заново заповнити профілі.")

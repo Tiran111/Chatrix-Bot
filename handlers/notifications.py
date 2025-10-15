@@ -159,6 +159,7 @@ class NotificationSystem:
                 text=broadcast_message,
                 parse_mode='Markdown'
             )
+            logger.info(f"✅ Розсилка відправлена користувачу {user_id}")
             return True
         except Exception as e:
             logger.error(f"❌ Помилка відправки розсилки для {user_id}: {e}")
