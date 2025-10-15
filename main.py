@@ -3,10 +3,11 @@ import os
 import asyncio
 import threading
 import time
-import requests
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+import urllib.request
+import json
 
 # Налаштування логування
 logging.basicConfig(
@@ -28,16 +29,16 @@ bot_initialized = False
 bot_initialization_started = False
 
 def keep_alive():
-    """Функція для підтримки активності додатку"""
+    """Функція для підтримки активності додатку без requests"""
     while True:
         try:
-            # Відправляємо запит до нашого ж додатку
-            response = requests.get('https://chatrix-bot-4m1p.onrender.com/health')
-            logger.info(f"🔄 Keep-alive: {response.status_code}")
+            # Використовуємо urllib замість requests
+            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=10) as response:
+                logger.info(f"🔄 Keep-alive: {response.getcode()}")
         except Exception as e:
             logger.error(f"❌ Keep-alive помилка: {e}")
         
-        # Чекаємо 4 хвилини між запитами (менше ніж 5 хвилин холодного старту)
+        # Чекаємо 4 хвилини між запитами
         time.sleep(240)
 
 # Запускаємо keep-alive в окремому потоці
