@@ -2,7 +2,7 @@ import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ConversationHandler
-from config import BOT_TOKEN, ADMIN_ID
+from config import TOKEN, ADMIN_ID
 from database.models import db
 from keyboards.main_menu import get_main_menu, get_rating_keyboard, get_back_to_menu_keyboard
 from utils.states import user_states, States
