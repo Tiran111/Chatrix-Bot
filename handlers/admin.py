@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import CallbackContext
 from database.models import db
-from keyboards.main_menu import get_main_menu, get_admin_menu, get_cancel_keyboard
+from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import ADMIN_ID
 from handlers.notifications import notification_system
@@ -114,7 +114,7 @@ async def reset_database(update: Update, context: CallbackContext):
         success = db.reset_database()
         
         if success:
-            await update.message.reply_text("✅ База даних скинута та перестворена!")
+            await update.message.reply_text("✅ База даних скинута та перестворена!\n\n📝 Тепер потрібно заново заповнити профілі.")
             # Показуємо оновлену статистику
             await show_admin_panel(update, context)
         else:
