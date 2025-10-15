@@ -1,9 +1,7 @@
-# Visual Studio files
-.vs/
-*.sln
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
+# Бази даних
+*.db
+*.sqlite
+*.sqlite3
 
 # Python
 __pycache__/
@@ -11,24 +9,33 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
-venv/
-.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Database
-*.db
-*.sqlite3
-
-# Environment variables
+# Environment
 .env
 .venv
-
-# OS
-.DS_Store
-Thumbs.db
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
