@@ -90,7 +90,7 @@ def setup_handlers(app_instance):
     
     from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
     from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection
-    from handlers.admin import handle_admin_actions, show_users_list, show_banned_users, start_ban_user, start_unban_user
+    from handlers.admin import handle_admin_actions, show_users_list, show_banned_users, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search, show_admin_panel
     from handlers.callback_handlers import setup_callback_handlers
     from keyboards.main_menu import get_main_menu
     
