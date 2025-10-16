@@ -137,78 +137,9 @@ async def handle_next_profile_callback(update: Update, context: ContextTypes.DEF
         except:
             pass
 
-async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка взаємного лайку з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        callback_data = query.data
-        current_user_id = query.from_user.id
-        
-        # Отримуємо ID користувача з callback_data
-        user_id = int(callback_data.split('_')[2])
-        
-        logger.info(f"🔍 [LIKE BACK] Користувач {current_user_id} лайкає назад {user_id}")
-        
-        success, message = db.add_like(current_user_id, user_id)
-        
-        logger.info(f"🔍 [LIKE BACK RESULT] Успіх: {success}, Повідомлення: {message}")
-        
-        if success:
-            current_user = db.get_user(current_user_id)
-            target_user = db.get_user(user_id)
-            
-            if current_user and target_user:
-                if db.has_liked(user_id, current_user_id):
-                    match_text = "🎉 У вас новий матч!"
-                    
-                    await query.edit_message_text(
-                        f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user['first_name']}!",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{target_user['username']}")] if target_user.get('username') else []
-                        ])
-                    )
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text=f"🎉 У вас новий матч з {current_user['first_name']}!",
-                            reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{current_user['username']}")] if current_user.get('username') else []
-                            ])
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
-                else:
-                    await query.edit_message_text(
-                        "❤️ Ви відправили лайк! Очікуйте на взаємність.",
-                        reply_markup=None
-                    )
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text=f"❤️ Вас лайкнув(ла) {current_user['first_name']}! Перевірте хто вас лайкнув у меню."
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
-            else:
-                await query.edit_message_text("❌ Помилка: користувача не знайдено")
-        else:
-            await query.edit_message_text(f"❌ {message}")
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки взаємного лайку: {e}", exc_info=True)
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
-        except:
-            pass
-
 # Функції для реєстрації обробників
 def setup_callback_handlers(application):
     """Налаштування callback обробників"""
     application.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
     application.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    application.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
     logger.info("✅ Callback обробники налаштовані")
