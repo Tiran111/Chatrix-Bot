@@ -1,8 +1,10 @@
+import os
 import logging
 import asyncio
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ConversationHandler
-from config import TOKEN, ADMIN_ID
+from config import initialize_config, TOKEN, ADMIN_ID
 from database.models import db
 from keyboards.main_menu import get_main_menu, get_rating_keyboard, get_back_to_menu_keyboard
 from utils.states import user_states, States
@@ -11,6 +13,7 @@ from handlers.rating_handlers import handle_like, handle_dislike, show_random_pr
 from handlers.match_handlers import handle_matches, show_match_details
 from handlers.admin_handlers import admin_panel, show_statistics, broadcast_message, handle_broadcast_text
 from utils.helpers import send_notification, validate_user, cleanup_inactive_users
+from handlers.callback_handlers import setup_callback_handlers
 
 # Налаштування логування
 logging.basicConfig(
@@ -235,7 +238,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник отримання фото"""
     try:
         user = update.effective_user
@@ -277,7 +280,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu()
         )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник текстових повідомлень"""
     try:
         user_id = update.effective_user.id
@@ -324,15 +327,23 @@ async def periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка при очищенні неактивних користувачів: {e}")
 
+async def post_init(application: Application):
+    """Функція, яка викликається після ініціалізації бота"""
+    logger.info("✅ Бот успішно ініціалізований на Render")
+
 def main():
     """Основна функція запуску бота"""
     try:
+        # Ініціалізація конфігурації
+        logger.info("🔄 Ініціалізація конфігурації...")
+        initialize_config()
+        
         # Ініціалізація бази даних
         logger.info("🔄 Ініціалізація бази даних...")
         db.init_db()
         
         # Створюємо додаток
-        application = Application.builder().token(BOT_TOKEN).build()
+        application = Application.builder().token(TOKEN).post_init(post_init).build()
         
         # Додаємо обробник помилок
         application.add_error_handler(error_handler)
@@ -351,9 +362,12 @@ def main():
         application.add_handler(CallbackQueryHandler(handle_delete_photo, pattern='^delete_photo_'))
         application.add_handler(CallbackQueryHandler(broadcast_message, pattern='^broadcast$'))
         
+        # Налаштовуємо callback обробники
+        setup_callback_handlers(application)
+        
         # Додаємо обробники повідомлень
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
         
         # Додаємо обробник для broadcast
         application.add_handler(MessageHandler(
@@ -368,18 +382,30 @@ def main():
         
         logger.info("🤖 Бот запускається...")
         
-        # Запускаємо бота
-        application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES,
-            timeout=30
-        )
+        # Перевіряємо чи працюємо на Render
+        if os.environ.get('RENDER'):
+            logger.info("🚀 Запуск у режимі Render (Flask + Polling)")
+            # На Render використовуємо стандартний polling
+            application.run_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES,
+                timeout=30
+            )
+        else:
+            # Локальний запуск
+            logger.info("🚀 Запуск у локальному режимі (Polling)")
+            application.run_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES,
+                timeout=30
+            )
         
     except Exception as e:
         logger.error(f"❌ Критична помилка запуску бота: {e}", exc_info=True)
     finally:
         # Завершуємо роботу з базою даних
-        db.conn.close()
+        if hasattr(db, 'conn'):
+            db.conn.close()
         logger.info("🔴 Бот зупинений")
 
 if __name__ == '__main__':
