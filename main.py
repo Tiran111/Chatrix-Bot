@@ -97,7 +97,7 @@ def setup_handlers(app_instance):
     # Callback обробники - ВИПРАВЛЕНО
     app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
     app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -115,25 +115,6 @@ async def handle_next_profile_callback(update: Update, context: ContextTypes.DEF
     """Обробка кнопки 'Далі' з callback"""
     from handlers.search import handle_next_profile_callback as next_handler
     await next_handler(update, context)
-
-async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка взаємного лайку з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        callback_data = query.data
-        user_id = int(callback_data.split('_')[2])
-        
-        from handlers.search import handle_like_back
-        await handle_like_back(update, context, user_id)
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки взаємного лайку: {e}")
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
-        except:
-            pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
