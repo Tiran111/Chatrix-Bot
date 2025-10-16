@@ -3,17 +3,11 @@ import logging
 import asyncio
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ConversationHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from config import initialize_config, TOKEN, ADMIN_ID
 from database.models import db
-from keyboards.main_menu import get_main_menu, get_rating_keyboard, get_back_to_menu_keyboard
+from keyboards.main_menu import get_main_menu, get_back_to_menu_keyboard
 from utils.states import user_states, States
-from handlers.profile_handlers import handle_photo, handle_text, show_profile, handle_delete_photo
-from handlers.rating_handlers import handle_like, handle_dislike, show_random_profile, handle_skip
-from handlers.match_handlers import handle_matches, show_match_details
-from handlers.admin_handlers import admin_panel, show_statistics, broadcast_message, handle_broadcast_text
-from utils.helpers import send_notification, validate_user, cleanup_inactive_users
-from handlers.callback_handlers import setup_callback_handlers
 
 # Налаштування логування
 logging.basicConfig(
@@ -97,6 +91,336 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показати профіль користувача"""
+    try:
+        query = update.callback_query
+        user_id = query.from_user.id
+        
+        # Отримуємо дані користувача
+        user = db.get_user(user_id)
+        if not user:
+            await query.edit_message_text(
+                "❌ Не вдалося завантажити профіль",
+                reply_markup=get_back_to_menu_keyboard()
+            )
+            return
+        
+        # Отримуємо фото користувача
+        photos = db.get_profile_photos(user_id)
+        
+        # Формуємо текст профілю
+        profile_text = (
+            f"👤 <b>Ваш профіль</b>\n\n"
+            f"🆔 ID: {user['telegram_id']}\n"
+            f"📛 Ім'я: {user['first_name']}\n"
+            f"👤 Username: @{user['username'] if user['username'] else 'Немає'}\n"
+            f"📸 Фото: {len(photos)}/3\n"
+            f"❤️ Рейтинг: {user.get('rating', 5.0):.1f}\n"
+            f"👍 Отримано лайків: {user.get('likes_count', 0)}\n"
+            f"🤝 Матчі: {len(db.get_user_matches(user_id))}\n"
+        )
+        
+        if user.get('age'):
+            profile_text += f"🎂 Вік: {user['age']}\n"
+        if user.get('gender'):
+            gender_display = "👨 Чоловік" if user['gender'] == 'male' else "👩 Жінка"
+            profile_text += f"⚧️ Стать: {gender_display}\n"
+        if user.get('city'):
+            profile_text += f"🏙️ Місто: {user['city']}\n"
+        if user.get('goal'):
+            profile_text += f"🎯 Ціль: {user['goal']}\n"
+        
+        profile_text += f"📅 Реєстрація: {user.get('created_at', 'Невідомо')[:10]}\n"
+        profile_text += f"🕐 Остання активність: {user.get('last_active', 'Невідомо')[:16]}\n"
+        
+        # Додаємо біографію якщо є
+        if user.get('bio'):
+            profile_text += f"\n📝 <b>Про себе:</b>\n{user['bio']}\n"
+        
+        # Створюємо клавіатуру для управління профілем
+        keyboard = []
+        
+        if photos:
+            keyboard.append([InlineKeyboardButton("🗑️ Видалити фото", callback_data="delete_photos")])
+        
+        if len(photos) < 3:
+            keyboard.append([InlineKeyboardButton("📸 Додати фото", callback_data="add_photo")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("📊 Статистика", callback_data="my_rating")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Відправляємо повідомлення
+        await query.edit_message_text(
+            profile_text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка показу профілю: {e}", exc_info=True)
+        try:
+            await query.edit_message_text(
+                "❌ Помилка завантаження профілю",
+                reply_markup=get_back_to_menu_keyboard()
+            )
+        except Exception:
+            pass
+
+async def show_random_profile(user_id, context, message):
+    """Показати випадковий профіль для оцінки"""
+    try:
+        # Отримуємо випадкового користувача
+        random_user = db.get_random_user(user_id)
+        
+        if not random_user:
+            await message.edit_text(
+                "😔 Наразі немає анкет для перегляду.\nСпробуйте пізніше!",
+                reply_markup=get_back_to_menu_keyboard()
+            )
+            return
+        
+        # Форматуємо профіль
+        profile_text = format_profile_text(random_user, "💕 Знайдені анкети")
+        
+        # Створюємо клавіатуру для оцінки
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❤️ Лайк", callback_data=f"like_{random_user[1]}"),
+             InlineKeyboardButton("👎 Дизлайк", callback_data=f"dislike_{random_user[1]}")],
+            [InlineKeyboardButton("➡️ Пропустити", callback_data=f"skip_{random_user[1]}"),
+             InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ])
+        
+        # Отримуємо фото користувача
+        main_photo = db.get_main_photo(random_user[1])
+        
+        if main_photo:
+            await message.reply_photo(
+                photo=main_photo,
+                caption=profile_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        else:
+            await message.reply_text(
+                profile_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка показу випадкового профілю: {e}")
+        await message.edit_text(
+            "❌ Помилка завантаження профілю. Спробуйте ще раз.",
+            reply_markup=get_back_to_menu_keyboard()
+        )
+
+def format_profile_text(user_data, title=""):
+    """Форматування тексту профілю"""
+    try:
+        gender_display = "👨 Чоловік" if user_data[5] == 'male' else "👩 Жінка"
+        
+        profile_text = f"""👤 {title}
+
+*Ім'я:* {user_data[3]}
+*Вік:* {user_data[4]} років
+*Стать:* {gender_display}
+*Місто:* {user_data[6]}
+*Ціль:* {user_data[8]}
+
+*Про себе:*
+{user_data[9] if user_data[9] else "Не вказано"}"""
+        
+        return profile_text
+    except Exception as e:
+        logger.error(f"❌ Помилка форматування профілю: {e}")
+        return "❌ Помилка завантаження профілю"
+
+async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник лайку"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        target_user_id = int(query.data.split('_')[1])
+        
+        # Додаємо лайк
+        success, message = db.add_like(user_id, target_user_id)
+        
+        if success:
+            # Перевіряємо чи це взаємний лайк
+            if db.has_liked(target_user_id, user_id):
+                # Матч!
+                target_user = db.get_user(target_user_id)
+                if target_user and target_user.get('username'):
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{target_user['username']}")]
+                    ])
+                    await query.edit_message_text(
+                        "💕 У вас матч! Ви вподобали один одного!\n\n"
+                        "💬 Тепер ви можете почати спілкування!",
+                        reply_markup=keyboard
+                    )
+                else:
+                    await query.edit_message_text("💕 У вас матч! Ви вподобали один одного!")
+            else:
+                await query.edit_message_text(f"❤️ {message}")
+        else:
+            await query.edit_message_text(f"❌ {message}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Помилка при обробці лайку.")
+        except:
+            pass
+
+async def handle_dislike(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник дизлайку"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        target_user_id = int(query.data.split('_')[1])
+        
+        # Просто показуємо наступний профіль
+        await show_random_profile(user_id, context, query.message)
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки дизлайку: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Помилка при обробці дизлайку.")
+        except:
+            pass
+
+async def handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник пропуску"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        await show_random_profile(user_id, context, query.message)
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки пропуску: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Помилка при обробці пропуску.")
+        except:
+            pass
+
+async def handle_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показати матчі користувача"""
+    try:
+        query = update.callback_query
+        user_id = query.from_user.id
+        
+        matches = db.get_user_matches(user_id)
+        
+        if matches:
+            match_text = f"💌 <b>Ваші матчі ({len(matches)}):</b>\n\n"
+            
+            for i, match in enumerate(matches, 1):
+                match_user = db.get_user(match[1])
+                if match_user:
+                    username = f"@{match_user['username']}" if match_user.get('username') else "немає username"
+                    match_text += f"{i}. {match_user['first_name']} ({username})\n"
+            
+            await query.edit_message_text(
+                match_text,
+                reply_markup=get_back_to_menu_keyboard(),
+                parse_mode='HTML'
+            )
+        else:
+            await query.edit_message_text(
+                "😔 У вас ще немає матчів.\n\n"
+                "💡 Активніше оцінюйте інших користувачів, щоб знайти матч!",
+                reply_markup=get_back_to_menu_keyboard(),
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка показу матчів: {e}")
+        await query.edit_message_text(
+            "❌ Помилка завантаження матчів",
+            reply_markup=get_back_to_menu_keyboard()
+        )
+
+async def handle_delete_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник видалення фото"""
+    try:
+        query = update.callback_query
+        await query.answer("Функція видалення фото буде реалізована найближчим часом!")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки видалення фото: {e}")
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Адмін панель"""
+    try:
+        user = update.effective_user
+        if user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Доступ заборонено")
+            return
+            
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
+        
+        stats_text = f"""📊 <b>Статистика бота</b>
+
+👥 Загалом користувачів: {db.get_users_count()}
+✅ Активних анкет: {total_active}
+👨 Чоловіків: {male}
+👩 Жінок: {female}"""
+
+        await update.message.reply_text(
+            stats_text,
+            parse_mode='HTML'
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка адмін панелі: {e}")
+
+async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показати статистику"""
+    try:
+        user = update.effective_user
+        if user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Доступ заборонено")
+            return
+            
+        await admin_panel(update, context)
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка статистики: {e}")
+
+async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Розсилка повідомлень"""
+    try:
+        query = update.callback_query
+        await query.answer("Функція розсилки буде реалізована найближчим часом!")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка розсилки: {e}")
+
+async def handle_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка тексту для розсилки"""
+    try:
+        user = update.effective_user
+        if user.id != ADMIN_ID:
+            return
+            
+        await update.message.reply_text("Функція розсилки буде реалізована найближчим часом!")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки розсилки: {e}")
 
 async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник головного меню"""
@@ -213,7 +537,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "• <b>Як знайти матч?</b> - Оцінюйте користувачів, при взаємному лайку буде матч\n"
                 "• <b>Чому мене ніхто не оцінює?</b> - Додайте якісні фото та активуйтеся\n"
                 "• <b>Як підвищити рейтинг?</b> - Отримуйте лайки від інших\n\n"
-                "📞 <b>Підтримка:</b> @support_username"
+                "📞 <b>Підтримка:</b> Напишіть адміністратору"
             )
             await query.edit_message_text(
                 help_text,
@@ -358,12 +682,8 @@ def main():
         application.add_handler(CallbackQueryHandler(handle_like, pattern='^like_'))
         application.add_handler(CallbackQueryHandler(handle_dislike, pattern='^dislike_'))
         application.add_handler(CallbackQueryHandler(handle_skip, pattern='^skip_'))
-        application.add_handler(CallbackQueryHandler(show_match_details, pattern='^match_'))
         application.add_handler(CallbackQueryHandler(handle_delete_photo, pattern='^delete_photo_'))
         application.add_handler(CallbackQueryHandler(broadcast_message, pattern='^broadcast$'))
-        
-        # Налаштовуємо callback обробники
-        setup_callback_handlers(application)
         
         # Додаємо обробники повідомлень
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
@@ -382,23 +702,12 @@ def main():
         
         logger.info("🤖 Бот запускається...")
         
-        # Перевіряємо чи працюємо на Render
-        if os.environ.get('RENDER'):
-            logger.info("🚀 Запуск у режимі Render (Flask + Polling)")
-            # На Render використовуємо стандартний polling
-            application.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES,
-                timeout=30
-            )
-        else:
-            # Локальний запуск
-            logger.info("🚀 Запуск у локальному режимі (Polling)")
-            application.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES,
-                timeout=30
-            )
+        # Запускаємо бота
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES,
+            timeout=30
+        )
         
     except Exception as e:
         logger.error(f"❌ Критична помилка запуску бота: {e}", exc_info=True)
