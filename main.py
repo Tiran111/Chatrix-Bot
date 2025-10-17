@@ -113,10 +113,9 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
-    # Callback обробники - ВИПРАВЛЕНО
-    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
+    # Додати ці обробники для звичайних кнопок:
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like_button))
+    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), handle_next_button))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))

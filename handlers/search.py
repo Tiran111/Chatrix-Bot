@@ -118,7 +118,7 @@ async def search_by_city(update: Update, context: CallbackContext):
     await update.message.reply_text("🏙️ Введіть назву міста для пошуку:")
 
 async def show_user_profile(update: Update, context: CallbackContext, user_data, title=""):
-    """Показати профіль користувача"""
+    """Показати профіль користувача з звичайними кнопками меню"""
     user = update.effective_user
     
     current_user_data = db.get_user(user.id)
@@ -137,30 +137,25 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
     
     main_photo = db.get_main_photo(telegram_id)
     
-    # Створюємо клавіатуру з callback кнопками
-    keyboard_buttons = []
-    
-    # Кнопка лайку
-    keyboard_buttons.append([InlineKeyboardButton("❤️ Лайк", callback_data=f"like_{telegram_id}")])
-    
-    # Кнопка "Далі" тільки для пошуку, не для топу
-    if "Топ" not in title:
-        keyboard_buttons.append([InlineKeyboardButton("➡️ Далі", callback_data="next_profile")])
-    
-    keyboard = InlineKeyboardMarkup(keyboard_buttons)
+    # Створюємо звичайні кнопки меню замість inline кнопок
+    keyboard = [
+        ['❤️ Лайк', '➡️ Далі'],
+        ['🔙 Меню']
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     try:
         if main_photo:
             await update.message.reply_photo(
                 photo=main_photo, 
                 caption=profile_text,
-                reply_markup=keyboard,
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
         else:
             await update.message.reply_text(
                 profile_text,
-                reply_markup=keyboard,
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
     except Exception as e:
@@ -615,3 +610,100 @@ async def handle_next(update: Update, context: CallbackContext):
             await update.callback_query.edit_message_text("❌ Сталася помилка.")
         except:
             pass
+
+async def handle_like_button(update: Update, context: CallbackContext):
+    """Обробка кнопки Лайк з меню"""
+    try:
+        user = update.effective_user
+        target_user_id = context.user_data.get('current_profile_id')
+        
+        if not target_user_id:
+            await update.message.reply_text("❌ Не знайдено профіль для лайку")
+            return
+        
+        logger.info(f"🔍 [LIKE BUTTON] Користувач {user.id} лайкає {target_user_id}")
+        
+        # Додаємо лайк з перевіркою обмежень
+        success, message = db.add_like(user.id, target_user_id)
+        
+        if success:
+            # Перевіряємо чи це взаємний лайк (матч)
+            is_mutual = db.has_liked(target_user_id, user.id)
+            
+            if is_mutual:
+                # Відправляємо сповіщення про матч
+                await notification_system.notify_new_match(context, user.id, target_user_id)
+                
+                # Отримуємо дані користувача
+                matched_user = db.get_user(target_user_id)
+                if matched_user:
+                    username = matched_user.get('username')
+                    match_text = f"💕 У вас матч з {matched_user['first_name']}!"
+                    
+                    if username:
+                        match_text += f"\n💬 Напиши: @{username}"
+                    
+                    await update.message.reply_text(match_text)
+                else:
+                    await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
+            else:
+                await update.message.reply_text(f"❤️ {message}")
+        else:
+            await update.message.reply_text(f"❌ {message}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку: {e}")
+        await update.message.reply_text("❌ Сталася помилка при обробці лайку.")
+
+async def handle_next_button(update: Update, context: CallbackContext):
+    """Обробка кнопки Далі з меню"""
+    try:
+        user = update.effective_user
+        
+        logger.info(f"🔍 [NEXT BUTTON] Обробка кнопки 'Далі' для {user.id}")
+        
+        search_users = context.user_data.get('search_users', [])
+        current_index = context.user_data.get('current_index', 0)
+        search_type = context.user_data.get('search_type', 'random')
+        
+        if not search_users:
+            await update.message.reply_text("🔄 Шукаємо нові анкети...")
+            await search_profiles(update, context)
+            return
+        
+        # Якщо це пошук за містом, шукаємо наступного користувача
+        if search_type == 'city':
+            if current_index < len(search_users) - 1:
+                current_index += 1
+                context.user_data['current_index'] = current_index
+                user_data = search_users[current_index]
+                
+                # Додаємо запис про перегляд профілю
+                db.add_profile_view(user.id, user_data[1])
+                
+                await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
+            else:
+                await update.message.reply_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
+        else:
+            # Для випадкового пошуку - шукаємо нову анкету
+            random_user = db.get_random_user(user.id)
+            if random_user:
+                # Додаємо запис про перегляд профілю
+                db.add_profile_view(user.id, random_user[1])
+                
+                await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
+                context.user_data['search_users'] = [random_user]
+                context.user_data['current_index'] = 0
+            else:
+                await update.message.reply_text(
+                    "😔 Більше немає анкет для перегляду\n\n"
+                    "💡 Спробуйте:\n"
+                    "• Змінити критерії пошуку\n"
+                    "• Пошукати за іншим містом\n"
+                    "• Зачекати поки з'являться нові користувачі",
+                    reply_markup=get_main_menu(user.id)
+                )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
+        await update.message.reply_text("❌ Сталася помилка.")
