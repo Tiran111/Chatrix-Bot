@@ -97,8 +97,8 @@ def setup_handlers(app_instance):
         
         # Callback обробники
         app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
+        app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
+        app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
         
         # Фото та універсальний обробник
         app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
