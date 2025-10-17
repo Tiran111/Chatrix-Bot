@@ -110,13 +110,13 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
 
+    # ДОДАЄМО ОБРОБНИКИ ДЛЯ НОВИХ КНОПОК - ВИКОРИСТОВУЄМО ЛЯМБДА
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), lambda update, context: handle_like_button(update, context)))
+    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), lambda update, context: handle_next_button(update, context)))
+
     # Адмін обробники
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-    
-    # Додати ці обробники для звичайних кнопок:
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like_button))
-    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), handle_next_button))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -124,102 +124,6 @@ def setup_handlers(app_instance):
 
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
-
-async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка лайку з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        callback_data = query.data
-        
-        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data} від {user.id}")
-        
-        # Отримуємо ID користувача з callback_data
-        target_user_id = int(callback_data.split('_')[1])
-        
-        from database.models import db
-        from handlers.notifications import notification_system
-        
-        logger.info(f"🔍 [LIKE] Користувач {user.id} лайкає {target_user_id}")
-        
-        # Додаємо лайк з перевіркою обмежень
-        success, message = db.add_like(user.id, target_user_id)
-        
-        logger.info(f"🔍 [LIKE RESULT] Успіх: {success}, Повідомлення: {message}")
-        
-        if success:
-            # Перевіряємо чи це взаємний лайк (матч)
-            is_mutual = db.has_liked(target_user_id, user.id)
-            logger.info(f"🔍 [LIKE MUTUAL] Взаємний: {is_mutual}")
-            
-            if is_mutual:
-                # Відправляємо сповіщення про матч
-                await notification_system.notify_new_match(context, user.id, target_user_id)
-                
-                # Отримуємо дані користувача для кнопки переходу в Telegram
-                matched_user = db.get_user(target_user_id)
-                if matched_user:
-                    username = matched_user.get('username')
-                    if username:
-                        # Створюємо кнопку для переходу в Telegram
-                        keyboard = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
-                        ])
-                        await query.edit_message_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            "💬 *Тепер ви можете почати спілкування!*",
-                            reply_markup=keyboard,
-                            parse_mode='Markdown'
-                        )
-                    else:
-                        await query.edit_message_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            "ℹ️ *У цього користувача немає username*",
-                            parse_mode='Markdown'
-                        )
-                else:
-                    await query.edit_message_text("💕 У вас матч! Ви вподобали один одного!")
-            else:
-                # Відправляємо сповіщення про лайк
-                await notification_system.notify_new_like(context, user.id, target_user_id)
-                await query.edit_message_text(f"❤️ {message}")
-        else:
-            await query.edit_message_text(f"❌ {message}")
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки лайку: {e}", exc_info=True)
-        try:
-            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
-        except:
-            pass
-
-async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка кнопки 'Далі' з callback"""
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        
-        logger.info(f"🔍 [NEXT CALLBACK] Обробка кнопки 'Далі' для {user.id}")
-        
-        from database.models import db
-        from handlers.search import show_user_profile
-        from keyboards.main_menu import get_main_menu
-        
-        search_users = context.user_data.get('search_users', [])
-        current_index = context.user_data.get('current_index', 0)
-        search_type = context.user_data.get('search_type', 'random')
-        
-        logger.info(f"🔍 [NEXT CALLBACK] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
-        
-        if not search_users:
-            await query.edit_message_text("🔄 Шукаємо нові анкети...")
-            from handlers.search import search_profiles
-            await search_profiles(update, context)
-            return
         
         # Якщо це пошук за містом, шукаємо наступного користувача
         if search_type == 'city':
