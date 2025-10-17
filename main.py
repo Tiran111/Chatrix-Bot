@@ -84,7 +84,47 @@ def run_async_tasks():
 async_thread = threading.Thread(target=run_async_tasks, daemon=True)
 async_thread.start()
 
-# CALLBACK ФУНКЦІЇ - ПЕРЕМІЩЕНО ВГОРУ
+def setup_handlers(app_instance):
+    """Налаштування обробників"""
+    logger.info("🔄 Налаштування обробників...")
+    
+    from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
+    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
+    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
+    from keyboards.main_menu import get_main_menu
+    
+    # Команди
+    app_instance.add_handler(CommandHandler("start", start))
+    
+    # Обробники кнопок
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    
+    # Адмін обробники
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    
+    # Callback обробники - ВИПРАВЛЕНО
+    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
+    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
+    
+    # Фото та універсальний обробник
+    app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+
+    app_instance.add_error_handler(error_handler)
+    logger.info("✅ Всі обробники налаштовано")
+
 async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка лайку з callback"""
     try:
@@ -291,47 +331,6 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
             pass
-
-def setup_handlers(app_instance):
-    """Налаштування обробників"""
-    logger.info("🔄 Налаштування обробників...")
-    
-    from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
-    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
-    from keyboards.main_menu import get_main_menu
-    
-    # Команди
-    app_instance.add_handler(CommandHandler("start", start))
-    
-    # Обробники кнопок
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-    app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-    
-    # Адмін обробники
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-    
-    # Callback обробники - ВИПРАВЛЕНО (тепер функції оголошені вище)
-    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
-    
-    # Фото та універсальний обробник
-    app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
-
-    app_instance.add_error_handler(error_handler)
-    logger.info("✅ Всі обробники налаштовано")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
