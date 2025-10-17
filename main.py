@@ -109,8 +109,11 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
     app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
+    
+    # ДОДАЙ СЮДИ НОВІ ОБРОБНИКИ:
+    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), lambda update, context: handle_like_button(update, context)))
+    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), lambda update, context: handle_next_button(update, context)))
+
 
     # Адмін обробники
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
