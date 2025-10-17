@@ -36,6 +36,14 @@ def get_admin_menu():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+def get_search_navigation():
+    """Навігація пошуку"""
+    keyboard = [
+        ['❤️ Лайк', '➡️ Далі'],
+        ['🔙 Меню']
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 def get_cancel_keyboard():
     """Клавіатура скасування"""
     keyboard = [['🔙 Скасувати']]
