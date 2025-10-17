@@ -13,79 +13,8 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-        
-        # Перевіряємо чи потрібно скинути БД
-        if self.needs_reset():
-            logger.info("🔄 Виявлено проблеми з БД, виконуємо автоматичне скидання...")
-            self.force_reset_database()
-        else:
-            self.init_db()
-            self.update_database_structure()
-
-    def needs_reset(self):
-        """Перевіряє чи потрібно скинути БД"""
-        try:
-            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            users_exists = self.cursor.fetchone() is not None
-            
-            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='likes'")
-            likes_exists = self.cursor.fetchone() is not None
-            
-            # Якщо немає таблиць або структура пошкоджена
-            if not users_exists or not likes_exists:
-                return True
-                
-            # Перевіряємо структуру таблиці users
-            self.cursor.execute("PRAGMA table_info(users)")
-            columns = [column[1] for column in self.cursor.fetchall()]
-            required_columns = ['telegram_id', 'first_name', 'gender', 'seeking_gender']
-            
-            for col in required_columns:
-                if col not in columns:
-                    logger.warning(f"❌ Відсутній обов'язковий стовпець: {col}")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка перевірки БД: {e}")
-            return True
-
-    def force_reset_database(self):
-        """Примусове скидання бази даних"""
-        try:
-            logger.info("🔄 Примусове скидання бази даних...")
-            
-            # Закриваємо з'єднання
-            self.conn.close()
-            
-            # Видаляємо файл БД
-            if os.path.exists(DATABASE_PATH):
-                os.remove(DATABASE_PATH)
-                logger.info("✅ Файл БД видалено")
-            
-            # Перестворюємо з'єднання
-            self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-            self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
-            
-            # Ініціалізуємо БД
-            self.init_db()
-            logger.info("✅ База даних повністю скинута та перестворена")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка скидання БД: {e}")
-            # Спробуємо створити нову БД навіть якщо видалення не вдалося
-            try:
-                self.init_db()
-                return True
-            except:
-                return False
-
-    def reset_database(self):
-        """Скидання бази даних через адмінку"""
-        return self.force_reset_database()
+        self.init_db()
+        self.update_database_structure()
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
@@ -101,7 +30,7 @@ class Database:
                 age INTEGER,
                 gender TEXT,
                 city TEXT,
-                seeking_gender TEXT DEFAULT 'all',
+                seeking_gender TEXT,
                 goal TEXT,
                 bio TEXT,
                 has_photo BOOLEAN DEFAULT FALSE,
@@ -179,7 +108,6 @@ class Database:
             
             changes_made = False
             
-            # Перевіряємо та додаємо відсутні стовпці
             if 'first_name' not in columns:
                 logger.info("➕ Додаємо стовпець first_name...")
                 self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
@@ -205,11 +133,6 @@ class Database:
                 self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
                 changes_made = True
             
-            if 'seeking_gender' not in columns:
-                logger.info("➕ Додаємо стовпець seeking_gender...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN seeking_gender TEXT DEFAULT "all"')
-                changes_made = True
-            
             if changes_made:
                 self.conn.commit()
                 logger.info("✅ Структура бази даних оновлена")
@@ -229,7 +152,6 @@ class Database:
             self.cursor.execute('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL')
             self.cursor.execute('UPDATE users SET rating = 5.0 WHERE rating IS NULL')
             self.cursor.execute('UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL')
-            self.cursor.execute('UPDATE users SET seeking_gender = "all" WHERE seeking_gender IS NULL')
             
             self.conn.commit()
             logger.info("✅ Значення для нових стовпців ініціалізовані")
@@ -240,27 +162,15 @@ class Database:
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:
-            # Спочатку перевіряємо чи користувач вже існує
-            existing_user = self.get_user(telegram_id)
-            if existing_user:
-                logger.info(f"🔄 Користувач {telegram_id} вже існує, оновлюємо дані")
-                # Оновлюємо дані користувача
-                self.cursor.execute('''
-                    UPDATE users SET username = ?, first_name = ?, last_active = CURRENT_TIMESTAMP 
-                    WHERE telegram_id = ?
-                ''', (username, first_name, telegram_id))
-            else:
-                # Додаємо нового користувача
-                self.cursor.execute('''
-                    INSERT INTO users (telegram_id, username, first_name) 
-                    VALUES (?, ?, ?)
-                ''', (telegram_id, username, first_name))
-            
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO users (telegram_id, username, first_name)
+                VALUES (?, ?, ?)
+            ''', (telegram_id, username, first_name))
             self.conn.commit()
             logger.info(f"✅ Користувач доданий/оновлений: {telegram_id} - {first_name}")
             return True
         except Exception as e:
-            logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
+            logger.error(f"❌ Помилка додавання користувача: {e}")
             return False
 
     def get_user(self, telegram_id):
@@ -269,22 +179,19 @@ class Database:
             self.cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
             user = self.cursor.fetchone()
             if user:
-                user_dict = dict(user)
-                logger.info(f"🔍 [GET USER] Знайдено користувача {telegram_id}: {user_dict.get('first_name', 'Невідомо')}")
-                return user_dict
-            else:
-                logger.warning(f"⚠️ [GET USER] Користувача {telegram_id} не знайдено")
-                return None
+                return dict(user)
+            return None
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача {telegram_id}: {e}")
+            logger.error(f"❌ Помилка отримання користувача: {e}")
             return None
     
     def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Оновлення профілю користувача"""
+        """Оновлення профілю користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
             logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
             
+            # ВИПРАВЛЕНА ВЕРСІЯ - правильно оновлюємо всі поля
             self.cursor.execute('''
                 UPDATE users 
                 SET age = ?, gender = ?, city = ?, seeking_gender = ?, goal = ?, bio = ?, last_active = CURRENT_TIMESTAMP
@@ -339,47 +246,30 @@ class Database:
         try:
             logger.info(f"🔄 Додаємо фото для {telegram_id}")
             
-            # Спочатку перевіряємо чи користувач існує
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
             user = self.cursor.fetchone()
             
             if not user:
-                logger.warning(f"⚠️ Користувача {telegram_id} не знайдено, спробуємо створити")
-                
-                # Створюємо користувача з базовими даними
-                success = self.add_user(telegram_id, None, "Користувач")
-                if not success:
-                    logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
-                    return False
-                    
-                # Повторно отримуємо користувача
-                self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
-                user = self.cursor.fetchone()
-                
-                if not user:
-                    logger.error(f"❌ Користувача {telegram_id} все ще не знайдено після створення")
-                    return False
+                logger.error(f"❌ Користувача {telegram_id} не знайдено")
+                return False
             
             user_id = user[0]
             
-            # Перевіряємо кількість фото
             current_photos = self.get_profile_photos(telegram_id)
             if len(current_photos) >= 3:
                 logger.error("❌ Досягнуто ліміт фото (максимум 3)")
                 return False
             
-            # Додаємо фото
             self.cursor.execute('INSERT INTO photos (user_id, file_id) VALUES (?, ?)', (user_id, file_id))
             self.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = ?', (telegram_id,))
             self.update_user_rating(telegram_id)
             
             self.conn.commit()
-            logger.info(f"✅ Фото успішно додано для користувача {telegram_id}!")
+            logger.info("✅ Фото успішно додано до бази даних!")
             return True
             
         except Exception as e:
             logger.error(f"❌ Помилка додавання фото: {e}")
-            self.conn.rollback()
             return False
     
     def get_main_photo(self, telegram_id):
@@ -763,16 +653,8 @@ class Database:
             return []
 
     def cleanup_old_data(self):
-        """Очищення старих даних з детальним логуванням"""
+        """Очищення старих даних"""
         try:
-            # Рахуємо кількість записів перед очищенням
-            self.cursor.execute('SELECT COUNT(*) FROM users WHERE age IS NULL AND created_at < datetime("now", "-30 days")')
-            old_incomplete = self.cursor.fetchone()[0]
-            
-            self.cursor.execute('SELECT COUNT(*) FROM likes WHERE created_at < datetime("now", "-90 days")')
-            old_likes = self.cursor.fetchone()[0]
-            
-            # Виконуємо очищення
             self.cursor.execute('''
                 DELETE FROM users 
                 WHERE age IS NULL AND created_at < datetime('now', '-30 days')
@@ -783,24 +665,9 @@ class Database:
                 WHERE created_at < datetime('now', '-90 days')
             ''')
             
-            # Оновлюємо статистику рейтингів
-            self.cursor.execute('SELECT telegram_id FROM users WHERE age IS NOT NULL')
-            active_users = self.cursor.fetchall()
-            
-            for user in active_users:
-                self.calculate_user_rating(user[0])
-            
             self.conn.commit()
-            
-            logger.info(f"✅ Очищено старих даних: {old_incomplete} неповних профілів, {old_likes} лайків")
-            logger.info(f"📊 Оновлено рейтинги для {len(active_users)} активних користувачів")
-            
-            return {
-                'deleted_incomplete': old_incomplete,
-                'deleted_likes': old_likes,
-                'updated_ratings': len(active_users)
-            }
-            
+            logger.info("✅ Старі дані очищено")
+            return True
         except Exception as e:
             logger.error(f"❌ Помилка очищення даних: {e}")
             return False
@@ -885,7 +752,7 @@ class Database:
                 return dict(user)
             return None
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача за ID: {e}")
+            logger.error(f"❌ Помилка отримання користувача: {e}")
             return None
 
     def update_user_name(self, telegram_id, first_name):
@@ -944,10 +811,10 @@ class Database:
             logger.error(f"❌ Помилка відладки: {e}")
             return False
 
-    def calculate_user_rating(self, telegram_id):
+    def calculate_user_rating(self, user_id):
         """Розрахунок рейтингу користувача"""
         try:
-            user = self.get_user(telegram_id)
+            user = self.get_user(user_id)
             if not user:
                 return 5.0
             
@@ -974,10 +841,10 @@ class Database:
 
             new_rating = min(base_rating + bonus, 10.0)
             
-            self.cursor.execute('UPDATE users SET rating = ? WHERE telegram_id = ?', (new_rating, telegram_id))
+            self.cursor.execute('UPDATE users SET rating = ? WHERE telegram_id = ?', (new_rating, user_id))
             self.conn.commit()
             
-            logger.info(f"✅ Рейтинг розраховано для {telegram_id}: {new_rating}")
+            logger.info(f"✅ Рейтинг розраховано для {user_id}: {new_rating}")
             return new_rating
             
         except Exception as e:
