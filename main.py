@@ -69,52 +69,68 @@ def setup_handlers(app_instance):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
-    from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_callback, handle_next_profile_callback, handle_like_back
-    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
-    from keyboards.main_menu import get_main_menu
-    
-    # Команди
-    app_instance.add_handler(CommandHandler("start", start))
-    
-    # Обробники кнопок
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-    app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-    
-    # Адмін обробники
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-    
-    # Callback обробники - ВИПРАВЛЕНО
-    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
-    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
-    app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
-    
-    # Фото та універсальний обробник
-    app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+    try:
+        from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
+        from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like_callback, handle_next_profile_callback, handle_like_back
+        from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
+        from keyboards.main_menu import get_main_menu
+        
+        # Команди
+        app_instance.add_handler(CommandHandler("start", start))
+        
+        # Обробники кнопок
+        app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+        app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+        app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+        app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+        app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+        app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+        app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+        app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+        app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+        app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+        app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+        
+        # Адмін обробники
+        app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
+        app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+        
+        # Callback обробники
+        app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
+        app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
+        app_instance.add_handler(CallbackQueryHandler(handle_like_back, pattern='^like_back_'))
+        
+        # Фото та універсальний обробник
+        app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+        app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
 
-    app_instance.add_error_handler(error_handler)
-    logger.info("✅ Всі обробники налаштовано")
+        app_instance.add_error_handler(error_handler)
+        logger.info("✅ Всі обробники налаштовано")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка налаштування обробників: {e}")
+        # Резервні прості обробники
+        app_instance.add_handler(CommandHandler("start", start))
+        app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+        logger.info("✅ Базові обробники налаштовано (резервний варіант)")
 
 async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка лайку з callback"""
-    from handlers.search import handle_like_callback as like_handler
-    await like_handler(update, context)
+    try:
+        from handlers.search import handle_like_callback as like_handler
+        await like_handler(update, context)
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку: {e}")
+        await update.callback_query.answer("❌ Помилка обробки лайку")
 
 async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки 'Далі' з callback"""
-    from handlers.search import handle_next_profile_callback as next_handler
-    await next_handler(update, context)
+    try:
+        from handlers.search import handle_next_profile_callback as next_handler
+        await next_handler(update, context)
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки наступного профілю: {e}")
+        await update.callback_query.answer("❌ Помилка обробки")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -128,8 +144,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from utils.states import user_states, States
         from config import ADMIN_ID
         
-        db.add_user(user.id, user.username, user.first_name)
-        logger.info(f"✅ Користувач {user.id} доданий в базу")
+        # Додаємо користувача в базу
+        try:
+            db.add_user(user.id, user.username, user.first_name)
+            logger.info(f"✅ Користувач {user.id} доданий в базу")
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося додати користувача в базу: {e}")
         
         user_states[user.id] = States.START
         
@@ -139,18 +159,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎯 *Почнімо знайомство!*"
         )
         
-        user_data, is_complete = db.get_user_profile(user.id)
-        
-        if not is_complete:
+        # Перевіряємо профіль
+        try:
+            user_data, is_complete = db.get_user_profile(user.id)
+            
+            if not is_complete:
+                welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
+                keyboard = [['📝 Заповнити профіль']]
+            else:
+                keyboard = [
+                    ['💕 Пошук анкет', '🏙️ По місту'],
+                    ['👤 Мій профіль', '❤️ Хто мене лайкнув'],
+                    ['💌 Мої матчі', '🏆 Топ'],
+                    ["👨‍💼 Зв'язок з адміном"]
+                ]
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося перевірити профіль: {e}")
             welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
             keyboard = [['📝 Заповнити профіль']]
-        else:
-            keyboard = [
-                ['💕 Пошук анкет', '🏙️ По місту'],
-                ['👤 Мій профіль', '❤️ Хто мене лайкнув'],
-                ['💌 Мої матчі', '🏆 Топ'],
-                ["👨‍💼 Зв'язок з адміном"]
-            ]
         
         if user.id == ADMIN_ID:
             keyboard.append(['👑 Адмін панель'])
@@ -201,7 +227,6 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         
         from utils.states import user_states, States
         from keyboards.main_menu import get_main_menu
-        from handlers.notifications import notification_system
         
         if user_states.get(user.id) != States.CONTACT_ADMIN:
             return
@@ -213,7 +238,12 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
         
-        await notification_system.notify_contact_admin(context, user.id, message_text)
+        # Сповіщення адміну
+        try:
+            from handlers.notifications import notification_system
+            await notification_system.notify_contact_admin(context, user.id, message_text)
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося відправити сповіщення адміну: {e}")
         
         await update.message.reply_text(
             "✅ Ваше повідомлення відправлено адміністратору!",
@@ -427,21 +457,21 @@ def init_bot():
     try:
         validate_environment()
         
-        max_wait_time = 10
+        max_wait_time = 15
         start_time = time.time()
         
         while event_loop is None and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.1)
+            time.sleep(0.5)
             logger.info("⏳ Чекаємо на ініціалізацію event loop...")
         
         if event_loop is None:
-            logger.error("❌ Event loop не ініціалізований протягом 10 секунд")
+            logger.error("❌ Event loop не ініціалізований протягом 15 секунд")
             return
         
         logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
         
         future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=30)
+        future.result(timeout=45)
         logger.info("✅ Бот успішно ініціалізовано")
         
     except Exception as e:
@@ -474,7 +504,7 @@ def webhook():
             logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
             
-            time.sleep(2)
+            time.sleep(3)
             
             if not bot_initialized or application is None:
                 logger.error("❌ Бот все ще не ініціалізований")
