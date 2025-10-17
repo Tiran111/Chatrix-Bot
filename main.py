@@ -85,8 +85,6 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
     app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
     app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Пошук$'), lambda update, context: search_profiles(update, context)))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Скасувати$'), lambda update, context: update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(update.effective_user.id))))
     app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
     app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
     app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
