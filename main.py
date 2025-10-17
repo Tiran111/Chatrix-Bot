@@ -6,6 +6,7 @@ import time
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import CallbackQueryHandler
 import urllib.request
 import json
 
