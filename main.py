@@ -4,10 +4,8 @@ import asyncio
 import threading
 import time
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-import urllib.request
-import json
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 # Налаштування логування
 logging.basicConfig(
@@ -27,23 +25,6 @@ application = None
 event_loop = None
 bot_initialized = False
 bot_initialization_started = False
-
-def keep_alive():
-    """Функція для підтримки активності додатку без requests"""
-    while True:
-        try:
-            # Використовуємо urllib замість requests
-            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=10) as response:
-                logger.info(f"🔄 Keep-alive: {response.getcode()}")
-        except Exception as e:
-            logger.error(f"❌ Keep-alive помилка: {e}")
-        
-        # Чекаємо 4 хвилини між запитами
-        time.sleep(240)
-
-# Запускаємо keep-alive в окремому потоці
-keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-keep_alive_thread.start()
 
 def validate_environment():
     """Перевірка змінних середовища"""
@@ -89,9 +70,8 @@ def setup_handlers(app_instance):
     logger.info("🔄 Налаштування обробників...")
     
     from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection
-    from handlers.admin import handle_admin_actions, show_users_list, show_banned_users, start_ban_user, start_unban_user
-    from handlers.callback_handlers import setup_callback_handlers
+    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
+    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
     from keyboards.main_menu import get_main_menu
     
     # Команди
@@ -111,11 +91,13 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     
     # Адмін обробники
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
     # Callback обробники - ВИПРАВЛЕНО
-    setup_callback_handlers(app_instance)
+    app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
+    app_instance.add_handler(CallbackQueryHandler(handle_next_profile_callback, pattern='^next_profile$'))
+    app_instance.add_handler(CallbackQueryHandler(handle_like_back_callback, pattern='^like_back_'))
     
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
@@ -123,6 +105,204 @@ def setup_handlers(app_instance):
 
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
+
+async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка лайку з callback"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user = query.from_user
+        callback_data = query.data
+        
+        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data}")
+        
+        # Отримуємо ID користувача з callback_data
+        target_user_id = int(callback_data.split('_')[1])
+        
+        from database.models import db
+        from handlers.notifications import notification_system
+        
+        # Додаємо лайк з перевіркою обмежень
+        success, message = db.add_like(user.id, target_user_id)
+        
+        if success:
+            # Перевіряємо чи це взаємний лайк (матч)
+            is_mutual = db.has_liked(target_user_id, user.id)
+            
+            if is_mutual:
+                # Відправляємо сповіщення про матч
+                await notification_system.notify_new_match(context, user.id, target_user_id)
+                
+                # Отримуємо дані користувача для кнопки переходу в Telegram
+                matched_user = db.get_user(target_user_id)
+                if matched_user:
+                    username = matched_user.get('username')
+                    if username:
+                        # Створюємо кнопку для переходу в Telegram
+                        keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{username}")]
+                        ])
+                        await query.edit_message_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            "💬 *Тепер ви можете почати спілкування!*",
+                            reply_markup=keyboard,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await query.edit_message_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            "ℹ️ *У цього користувача немає username*",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await query.edit_message_text("💕 У вас матч! Ви вподобали один одного!")
+            else:
+                # Відправляємо сповіщення про лайк
+                await notification_system.notify_new_like(context, user.id, target_user_id)
+                await query.edit_message_text(f"❤️ {message}")
+        else:
+            await query.edit_message_text(f"❌ {message}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
+        except:
+            pass
+
+async def handle_next_profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка кнопки 'Далі' з callback"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user = query.from_user
+        
+        logger.info(f"🔍 [NEXT CALLBACK] Обробка кнопки 'Далі' для {user.id}")
+        
+        from database.models import db
+        from handlers.search import show_user_profile
+        from keyboards.main_menu import get_main_menu
+        
+        search_users = context.user_data.get('search_users', [])
+        current_index = context.user_data.get('current_index', 0)
+        search_type = context.user_data.get('search_type', 'random')
+        
+        logger.info(f"🔍 [NEXT CALLBACK] Тип пошуку: {search_type}, індекс: {current_index}, знайдено: {len(search_users)}")
+        
+        if not search_users:
+            await query.edit_message_text("🔄 Шукаємо нові анкети...")
+            from handlers.search import search_profiles
+            await search_profiles(update, context)
+            return
+        
+        # Якщо це пошук за містом, шукаємо наступного користувача
+        if search_type == 'city':
+            if current_index < len(search_users) - 1:
+                current_index += 1
+                context.user_data['current_index'] = current_index
+                user_data = search_users[current_index]
+                
+                # Додаємо запис про перегляд профілю
+                db.add_profile_view(user.id, user_data[1])
+                
+                await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
+            else:
+                await query.edit_message_text("✅ Це остання анкета в цьому місті", reply_markup=get_main_menu(user.id))
+        else:
+            # Для випадкового пошуку - шукаємо нову анкету
+            random_user = db.get_random_user(user.id)
+            if random_user:
+                # Додаємо запис про перегляд профілю
+                db.add_profile_view(user.id, random_user[1])
+                
+                await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
+                context.user_data['search_users'] = [random_user]
+                context.user_data['current_index'] = 0
+            else:
+                await query.edit_message_text(
+                    "😔 Більше немає анкет для перегляду\n\n"
+                    "💡 Спробуйте:\n"
+                    "• Змінити критерії пошуку\n"
+                    "• Пошукати за іншим містом\n"
+                    "• Зачекати поки з'являться нові користувачі",
+                    reply_markup=get_main_menu(user.id)
+                )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка.")
+        except:
+            pass
+
+async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка взаємного лайку з callback"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        callback_data = query.data
+        current_user_id = query.from_user.id
+        
+        # Отримуємо ID користувача з callback_data
+        user_id = int(callback_data.split('_')[2])
+        
+        from database.models import db
+        from handlers.notifications import notification_system
+        
+        success, message = db.add_like(current_user_id, user_id)
+        
+        if success:
+            current_user = db.get_user(current_user_id)
+            target_user = db.get_user(user_id)
+            
+            if current_user and target_user:
+                if db.has_liked(user_id, current_user_id):
+                    match_text = "🎉 У вас новий матч!"
+                    
+                    await query.edit_message_text(
+                        f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user['first_name']}!",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{target_user['username']}")] if target_user.get('username') else []
+                        ])
+                    )
+                    
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🎉 У вас новий матч з {current_user['first_name']}!",
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{current_user['username']}")] if current_user.get('username') else []
+                            ])
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про матч: {e}")
+                else:
+                    await query.edit_message_text(
+                        "❤️ Ви відправили лайк! Очікуйте на взаємність.",
+                        reply_markup=None
+                    )
+                    
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"❤️ Вас лайкнув(ла) {current_user['first_name']}! Перевірте хто вас лайкнув у меню."
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Не вдалося сповістити користувача {user_id} про лайк: {e}")
+            else:
+                await query.edit_message_text("❌ Помилка: користувача не знайдено")
+        else:
+            await query.edit_message_text(f"❌ {message}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки взаємного лайку: {e}")
+        try:
+            await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
+        except:
+            pass
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -305,16 +485,14 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         
         if user.id == ADMIN_ID:
-            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "🗑️ Скинути БД"]:
+            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 from handlers.admin import handle_admin_actions
                 await handle_admin_actions(update, context)
                 return
             
-            if text in ["📋 Список користувачів", "🔍 Пошук користувача", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
+            if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
                 if text == "📋 Список користувачів":
                     await show_users_list(update, context)
-                elif text == "🔍 Пошук користувача":
-                    await handle_user_search(update, context)
                 elif text == "🚫 Заблокувати користувача":
                     await start_ban_user(update, context)
                 elif text == "✅ Розблокувати користувача":
@@ -474,11 +652,6 @@ def healthz():
 @app.route('/ping')
 def ping():
     return "pong", 200
-
-@app.route('/keepalive')
-def keepalive():
-    """Спеціальний ендпоінт для keep-alive"""
-    return "ALIVE", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
