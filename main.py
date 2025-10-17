@@ -6,6 +6,8 @@ import time
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+import urllib.request
+import json
 
 # Налаштування логування
 logging.basicConfig(
@@ -25,6 +27,23 @@ application = None
 event_loop = None
 bot_initialized = False
 bot_initialization_started = False
+
+def keep_alive():
+    """Функція для підтримки активності додатку без requests"""
+    while True:
+        try:
+            # Використовуємо urllib замість requests
+            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=10) as response:
+                logger.info(f"🔄 Keep-alive: {response.getcode()}")
+        except Exception as e:
+            logger.error(f"❌ Keep-alive помилка: {e}")
+        
+        # Чекаємо 4 хвилини між запитами
+        time.sleep(240)
+
+# Запускаємо keep-alive в окремому потоці
+keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+keep_alive_thread.start()
 
 def validate_environment():
     """Перевірка змінних середовища"""
@@ -91,8 +110,8 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
     
     # Адмін обробники
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування|🗑️ Скинути БД)$'), handle_admin_actions))
+    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🔍 Пошук користувача|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
     # Callback обробники - ВИПРАВЛЕНО
     app_instance.add_handler(CallbackQueryHandler(handle_like_callback, pattern='^like_'))
@@ -115,7 +134,7 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         user = query.from_user
         callback_data = query.data
         
-        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data}")
+        logger.info(f"🔍 [LIKE CALLBACK] Отримано callback: {callback_data} від {user.id}")
         
         # Отримуємо ID користувача з callback_data
         target_user_id = int(callback_data.split('_')[1])
@@ -123,12 +142,17 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         from database.models import db
         from handlers.notifications import notification_system
         
+        logger.info(f"🔍 [LIKE] Користувач {user.id} лайкає {target_user_id}")
+        
         # Додаємо лайк з перевіркою обмежень
         success, message = db.add_like(user.id, target_user_id)
+        
+        logger.info(f"🔍 [LIKE RESULT] Успіх: {success}, Повідомлення: {message}")
         
         if success:
             # Перевіряємо чи це взаємний лайк (матч)
             is_mutual = db.has_liked(target_user_id, user.id)
+            logger.info(f"🔍 [LIKE MUTUAL] Взаємний: {is_mutual}")
             
             if is_mutual:
                 # Відправляємо сповіщення про матч
@@ -165,7 +189,7 @@ async def handle_like_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text(f"❌ {message}")
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки лайку: {e}")
+        logger.error(f"❌ Помилка обробки лайку: {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
@@ -231,7 +255,7 @@ async def handle_next_profile_callback(update: Update, context: ContextTypes.DEF
                 )
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}")
+        logger.error(f"❌ Помилка обробки кнопки 'Далі': {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка.")
         except:
@@ -252,7 +276,11 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
         from database.models import db
         from handlers.notifications import notification_system
         
+        logger.info(f"🔍 [LIKE BACK] Користувач {current_user_id} лайкає назад {user_id}")
+        
         success, message = db.add_like(current_user_id, user_id)
+        
+        logger.info(f"🔍 [LIKE BACK RESULT] Успіх: {success}, Повідомлення: {message}")
         
         if success:
             current_user = db.get_user(current_user_id)
@@ -298,7 +326,7 @@ async def handle_like_back_callback(update: Update, context: ContextTypes.DEFAUL
             await query.edit_message_text(f"❌ {message}")
             
     except Exception as e:
-        logger.error(f"❌ Помилка обробки взаємного лайку: {e}")
+        logger.error(f"❌ Помилка обробки взаємного лайку: {e}", exc_info=True)
         try:
             await update.callback_query.edit_message_text("❌ Сталася помилка при обробці лайку.")
         except:
@@ -485,14 +513,16 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         
         if user.id == ADMIN_ID:
-            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
+            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування", "🗑️ Скинути БД"]:
                 from handlers.admin import handle_admin_actions
                 await handle_admin_actions(update, context)
                 return
             
-            if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
+            if text in ["📋 Список користувачів", "🔍 Пошук користувача", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
                 if text == "📋 Список користувачів":
                     await show_users_list(update, context)
+                elif text == "🔍 Пошук користувача":
+                    await handle_user_search(update, context)
                 elif text == "🚫 Заблокувати користувача":
                     await start_ban_user(update, context)
                 elif text == "✅ Розблокувати користувача":
@@ -652,6 +682,11 @@ def healthz():
 @app.route('/ping')
 def ping():
     return "pong", 200
+
+@app.route('/keepalive')
+def keepalive():
+    """Спеціальний ендпоінт для keep-alive"""
+    return "ALIVE", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
