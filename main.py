@@ -125,6 +125,67 @@ def setup_handlers(app_instance):
     app_instance.add_error_handler(error_handler)
     logger.info("✅ Всі обробники налаштовано")
 
+def validate_environment():
+    """Перевірка змінних середовища"""
+    required_vars = ['BOT_TOKEN', 'ADMIN_ID']
+    missing_vars = []
+    
+    for var in required_vars:
+        if not os.environ.get(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        error_msg = f"❌ Відсутні обов'язкові змінні середовища: {', '.join(missing_vars)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    token = os.environ.get('BOT_TOKEN')
+    if not token or token == 'your_bot_token_here':
+        error_msg = "❌ Ви використовуєте тестовий токен. Встановіть реальний токен бота."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    try:
+        admin_id = int(os.environ.get('ADMIN_ID', 0))
+        if admin_id == 0:
+            raise ValueError("ADMIN_ID не встановлено")
+    except ValueError:
+        raise ValueError("❌ ADMIN_ID має бути числовим значенням")
+    
+    logger.info("✅ Змінні середовища перевірені успішно")
+
+def init_bot():
+    """Ініціалізація бота"""
+    global event_loop, bot_initialization_started
+    
+    if bot_initialization_started:
+        return
+        
+    bot_initialization_started = True
+    
+    try:
+        validate_environment()
+        
+        max_wait_time = 10
+        start_time = time.time()
+        
+        while event_loop is None and (time.time() - start_time) < max_wait_time:
+            time.sleep(0.1)
+            logger.info("⏳ Чекаємо на ініціалізацію event loop...")
+        
+        if event_loop is None:
+            logger.error("❌ Event loop не ініціалізований протягом 10 секунд")
+            return
+        
+        logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
+        
+        future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
+        future.result(timeout=30)
+        logger.info("✅ Бот успішно ініціалізовано")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка запуску бота: {e}", exc_info=True)
+
 if __name__ == "__main__":
     logger.info("🚀 Запуск додатку...")
     init_bot()
