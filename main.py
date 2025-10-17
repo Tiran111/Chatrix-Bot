@@ -412,12 +412,15 @@ async def initialize_bot_async():
     try:
         logger.info("🚀 Асинхронна ініціалізація бота...")
         
-        from config import initialize_config
+        from config import initialize_config, initialize_bot_info
         initialize_config()
         from config import TOKEN
         
         application = Application.builder().token(TOKEN).build()
         logger.info("✅ Application створено")
+        
+        # Додаємо асинхронну ініціалізацію інформації про бота
+        await initialize_bot_info(application)
         
         setup_handlers(application)
         logger.info("✅ Обробники налаштовано")

@@ -49,21 +49,25 @@ def initialize_config():
     if ADMIN_ID == 0:
         raise ValueError("❌ ADMIN_ID не встановлено")
     
-    # Отримуємо інформацію про бота
-    try:
-        import telegram
-        bot = telegram.Bot(TOKEN)
-        bot_info = bot.get_me()
-        BOT_USERNAME = bot_info.username
-        logger.info(f"✅ Бот @{BOT_USERNAME} успішно ініціалізовано")
-    except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}")
-        raise
+    # Спрощена ініціалізація - без отримання інформації про бота
+    # Це буде зроблено пізніше в асинхронному контексті
+    BOT_USERNAME = "chatrix_bot"  # Тимчасове значення
     
     logger.info("✅ Конфігурація успішно ініціалізована")
     logger.info(f"🔧 ADMIN_ID: {ADMIN_ID}")
     logger.info(f"🔧 DATABASE_URL: {DATABASE_URL}")
     logger.info(f"🔧 WEBHOOK_URL: {WEBHOOK_URL}")
+
+async def initialize_bot_info(application):
+    """Асинхронна ініціалізація інформації про бота"""
+    global BOT_USERNAME
+    try:
+        bot_info = await application.bot.get_me()
+        BOT_USERNAME = bot_info.username
+        logger.info(f"✅ Бот @{BOT_USERNAME} успішно ініціалізовано")
+    except Exception as e:
+        logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        BOT_USERNAME = "chatrix_bot"
 
 def validate_environment():
     """Перевірка змінних середовища"""
