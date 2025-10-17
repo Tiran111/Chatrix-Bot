@@ -70,7 +70,7 @@ def setup_handlers(app_instance):
     logger.info("🔄 Налаштування обробників...")
     
     from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like
+    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile
     from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
     from keyboards.main_menu import get_main_menu
     
@@ -83,7 +83,6 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
     app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
     app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
     app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
     app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
     app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
