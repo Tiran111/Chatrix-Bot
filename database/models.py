@@ -242,31 +242,24 @@ class Database:
             logger.error(f"❌ Помилка оновлення рейтингу: {e}")
     
     def add_profile_photo(self, telegram_id, file_id):
-        """Додавання фото до профілю - ВИПРАВЛЕНА ВЕРСІЯ"""
+        """Додавання фото до профілю"""
         try:
             logger.info(f"🔄 Додаємо фото для {telegram_id}")
             
-            # Спочатку перевіряємо чи користувач існує
-            user = self.get_user(telegram_id)
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
+            user = self.cursor.fetchone()
+            
             if not user:
                 logger.error(f"❌ Користувача {telegram_id} не знайдено")
                 return False
             
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
-            user_result = self.cursor.fetchone()
-            
-            if not user_result:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено в базі")
-                return False
-            
-            user_id = user_result[0]
+            user_id = user[0]
             
             current_photos = self.get_profile_photos(telegram_id)
             if len(current_photos) >= 3:
                 logger.error("❌ Досягнуто ліміт фото (максимум 3)")
                 return False
             
-            # Додаємо фото
             self.cursor.execute('INSERT INTO photos (user_id, file_id) VALUES (?, ?)', (user_id, file_id))
             self.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = ?', (telegram_id,))
             self.update_user_rating(telegram_id)
