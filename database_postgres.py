@@ -757,5 +757,52 @@ class Database:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
 
+    def update_user_rating(self, telegram_id):
+        """Оновлення рейтингу користувача"""
+        try:
+            user = self.get_user(telegram_id)
+            if not user:
+                return
+            
+            base_rating = 5.0
+            bonus = 0.0
+            
+            if user.get('has_photo'):
+                bonus += 1.0
+            
+            if user.get('bio') and len(user.get('bio', '')) > 20:
+                bonus += 1.0
+            
+            likes_count = user.get('likes_count', 0)
+            bonus += min(likes_count * 0.1, 3.0)
+            
+            new_rating = min(base_rating + bonus, 10.0)
+            
+            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
+            logger.info(f"✅ Рейтинг оновлено для {telegram_id}: {new_rating}")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка оновлення рейтингу: {e}")
+
+    def reset_database(self):
+        """Скинути базу даних (для адміна)"""
+        try:
+            # Видаляємо всі таблиці
+            self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
+            
+            # Перестворюємо таблиці
+            self.init_db()
+            
+            self.conn.commit()
+            logger.info("✅ Базу даних скинуто та перестворено")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання бази даних: {e}")
+            return False
+
 # Глобальний об'єкт бази даних
 db = Database()
