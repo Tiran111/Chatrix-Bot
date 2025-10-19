@@ -13,79 +13,8 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-        
-        # Перевіряємо чи потрібно скинути БД
-        if self.needs_reset():
-            logger.info("🔄 Виявлено проблеми з БД, виконуємо автоматичне скидання...")
-            self.force_reset_database()
-        else:
-            self.init_db()
-            self.update_database_structure()
-
-    def needs_reset(self):
-        """Перевіряє чи потрібно скинути БД"""
-        try:
-            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            users_exists = self.cursor.fetchone() is not None
-            
-            self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='likes'")
-            likes_exists = self.cursor.fetchone() is not None
-            
-            # Якщо немає таблиць або структура пошкоджена
-            if not users_exists or not likes_exists:
-                return True
-                
-            # Перевіряємо структуру таблиці users
-            self.cursor.execute("PRAGMA table_info(users)")
-            columns = [column[1] for column in self.cursor.fetchall()]
-            required_columns = ['telegram_id', 'first_name', 'gender', 'seeking_gender']
-            
-            for col in required_columns:
-                if col not in columns:
-                    logger.warning(f"❌ Відсутній обов'язковий стовпець: {col}")
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка перевірки БД: {e}")
-            return True
-
-    def force_reset_database(self):
-        """Примусове скидання бази даних"""
-        try:
-            logger.info("🔄 Примусове скидання бази даних...")
-            
-            # Закриваємо з'єднання
-            self.conn.close()
-            
-            # Видаляємо файл БД
-            if os.path.exists(DATABASE_PATH):
-                os.remove(DATABASE_PATH)
-                logger.info("✅ Файл БД видалено")
-            
-            # Перестворюємо з'єднання
-            self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-            self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
-            
-            # Ініціалізуємо БД
-            self.init_db()
-            logger.info("✅ База даних повністю скинута та перестворена")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка скидання БД: {e}")
-            # Спробуємо створити нову БД навіть якщо видалення не вдалося
-            try:
-                self.init_db()
-                return True
-            except:
-                return False
-
-    def reset_database(self):
-        """Скидання бази даних через адмінку"""
-        return self.force_reset_database()
+        self.init_db()
+        self.update_database_structure()
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
@@ -101,7 +30,7 @@ class Database:
                 age INTEGER,
                 gender TEXT,
                 city TEXT,
-                seeking_gender TEXT DEFAULT 'all',
+                seeking_gender TEXT,
                 goal TEXT,
                 bio TEXT,
                 has_photo BOOLEAN DEFAULT FALSE,
@@ -179,7 +108,6 @@ class Database:
             
             changes_made = False
             
-            # Перевіряємо та додаємо відсутні стовпці
             if 'first_name' not in columns:
                 logger.info("➕ Додаємо стовпець first_name...")
                 self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
@@ -205,11 +133,6 @@ class Database:
                 self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
                 changes_made = True
             
-            if 'seeking_gender' not in columns:
-                logger.info("➕ Додаємо стовпець seeking_gender...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN seeking_gender TEXT DEFAULT "all"')
-                changes_made = True
-            
             if changes_made:
                 self.conn.commit()
                 logger.info("✅ Структура бази даних оновлена")
@@ -229,7 +152,6 @@ class Database:
             self.cursor.execute('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL')
             self.cursor.execute('UPDATE users SET rating = 5.0 WHERE rating IS NULL')
             self.cursor.execute('UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL')
-            self.cursor.execute('UPDATE users SET seeking_gender = "all" WHERE seeking_gender IS NULL')
             
             self.conn.commit()
             logger.info("✅ Значення для нових стовпців ініціалізовані")
@@ -264,11 +186,12 @@ class Database:
             return None
     
     def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Оновлення профілю користувача"""
+        """Оновлення профілю користувача - ВИПРАВЛЕНА ВЕРСІЯ"""
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
             logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
             
+            # ВИПРАВЛЕНА ВЕРСІЯ - правильно оновлюємо всі поля
             self.cursor.execute('''
                 UPDATE users 
                 SET age = ?, gender = ?, city = ?, seeking_gender = ?, goal = ?, bio = ?, last_active = CURRENT_TIMESTAMP
