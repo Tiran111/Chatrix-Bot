@@ -646,10 +646,33 @@ def setup_debug_handlers(application):
     """Налаштування debug обробників"""
     application.add_handler(CommandHandler("debug", debug_bot))
 
-# Викликаємо налаштування debug обробників
-setup_debug_handlers(application)
-print("✅ Debug обробники додано")
+# ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
+print("=" * 60)
+print("🔧 ДЕТАЛЬНА ІНФОРМАЦІЯ ПРО БАЗУ ДАНИХ")
+print("=" * 60)
 
+# Перевірка типу бази даних
+if 'postgres' in str(type(db)).lower():
+    print("✅ АКТИВНА БАЗА: PostgreSQL")
+    db_type = "PostgreSQL"
+else:
+    print("ℹ️ АКТИВНА БАЗА: SQLite")
+    db_type = "SQLite"
+
+# Тест базових функцій
+try:
+    user_count = db.get_users_count()
+    print(f"📊 Кількість користувачів: {user_count}")
+    
+    stats = db.get_statistics()
+    male, female, total_active, goals_stats = stats
+    print(f"📈 Статистика: {male} чол., {female} жін., {total_active} актив.")
+    
+    print("✅ Тест бази даних пройдено успішно")
+except Exception as e:
+    print(f"❌ Помилка тесту бази даних: {e}")
+
+print("=" * 60)
 print("🚀 Бот повністю готовий до роботи!")
 print("=" * 60)
 
