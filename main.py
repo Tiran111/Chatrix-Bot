@@ -221,7 +221,6 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
-        from utils.states import user_states, States
         user_states[user.id] = States.CONTACT_ADMIN
         
         contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
@@ -248,10 +247,6 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
     try:
         user = update.effective_user
         
-        from utils.states import user_states, States
-        from keyboards.main_menu import get_main_menu
-        from handlers.notifications import notification_system
-        
         if user_states.get(user.id) != States.CONTACT_ADMIN:
             return
         
@@ -262,6 +257,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
         
+        from handlers.notifications import notification_system
         await notification_system.notify_contact_admin(context, user.id, message_text)
         
         await update.message.reply_text(
@@ -275,20 +271,116 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"❌ Помилка в handle_contact_message: {e}")
         await update.message.reply_text("❌ Сталася помилка.")
 
+# Додаємо прості версії функцій, які відсутні
+async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія створення профілю"""
+    try:
+        from handlers.profile import start_profile_creation as real_start_profile
+        await real_start_profile(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція створення профілю тимчасово недоступна")
+
+async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія показу профілю"""
+    try:
+        from handlers.profile import show_my_profile as real_show_profile
+        await real_show_profile(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція перегляду профілю тимчасово недоступна")
+
+async def search_profiles(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія пошуку профілів"""
+    try:
+        from handlers.search import search_profiles as real_search
+        await real_search(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція пошуку тимчасово недоступна")
+
+async def search_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія пошуку за містом"""
+    try:
+        from handlers.search import search_by_city as real_search_city
+        await real_search_city(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція пошуку за містом тимчасово недоступна")
+
+async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія наступного профілю"""
+    try:
+        from handlers.search import show_next_profile as real_next_profile
+        await real_next_profile(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція наступного профілю тимчасово недоступна")
+
+async def handle_like(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія лайку"""
+    try:
+        from handlers.search import handle_like as real_handle_like
+        await real_handle_like(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція лайку тимчасово недоступна")
+
+async def handle_like_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія взаємного лайку"""
+    try:
+        from handlers.search import handle_like_back as real_handle_like_back
+        await real_handle_like_back(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція взаємного лайку тимчасово недоступна")
+
+async def show_top_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія топу користувачів"""
+    try:
+        from handlers.search import show_top_users as real_show_top
+        await real_show_top(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція топу користувачів тимчасово недоступна")
+
+async def show_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія матчів"""
+    try:
+        from handlers.search import show_matches as real_show_matches
+        await real_show_matches(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція матчів тимчасово недоступна")
+
+async def show_likes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія лайків"""
+    try:
+        from handlers.search import show_likes as real_show_likes
+        await real_show_likes(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція перегляду лайків тимчасово недоступна")
+
+async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія вибору топу"""
+    try:
+        from handlers.search import handle_top_selection as real_handle_top
+        await real_handle_top(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція вибору топу тимчасово недоступна")
+
+async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія адмін дій"""
+    try:
+        from handlers.admin import handle_admin_actions as real_admin_actions
+        await real_admin_actions(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
+
+async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія обробки фото"""
+    try:
+        from handlers.profile import handle_main_photo as real_handle_photo
+        await real_handle_photo(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція обробки фото тимчасово недоступна")
+
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Універсальний обробник повідомлень"""
     try:
         user = update.effective_user
         text = update.message.text if update.message.text else ""
-        
-        from utils.states import user_states, States
-        from handlers.profile import handle_profile_message, handle_main_photo
-        from handlers.search import show_user_profile, handle_like, handle_like_back
-        from handlers.admin import handle_ban_user, handle_unban_user, handle_broadcast_message, handle_user_search, show_admin_panel, show_users_list, show_banned_users, start_ban_user, start_unban_user
-        from handlers.profile import start_profile_creation
-        from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection
-        from keyboards.main_menu import get_main_menu
-        from config import ADMIN_ID
         
         state = user_states.get(user.id, States.START)
 
@@ -307,7 +399,11 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if state in [States.PROFILE_AGE, States.PROFILE_GENDER, States.PROFILE_SEEKING_GENDER, 
                      States.PROFILE_CITY, States.PROFILE_GOAL, States.PROFILE_BIO]:
-            await handle_profile_message(update, context)
+            try:
+                from handlers.profile import handle_profile_message
+                await handle_profile_message(update, context)
+            except ImportError:
+                await update.message.reply_text("❌ Функція редагування профілю тимчасово недоступна")
             return
         
         if context.user_data.get('waiting_for_city'):
@@ -315,11 +411,15 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users = db.get_users_by_city(clean_city, user.id)
             
             if users:
-                user_data = users[0]
-                await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
-                context.user_data['search_users'] = users
-                context.user_data['current_index'] = 0
-                context.user_data['search_type'] = 'city'
+                try:
+                    from handlers.search import show_user_profile
+                    user_data = users[0]
+                    await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
+                    context.user_data['search_users'] = users
+                    context.user_data['current_index'] = 0
+                    context.user_data['search_type'] = 'city'
+                except ImportError:
+                    await update.message.reply_text("❌ Функція пошуку тимчасово недоступна")
             else:
                 await update.message.reply_text(
                     f"😔 Не знайдено анкет у місті {clean_city}",
@@ -332,43 +432,40 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user.id == ADMIN_ID:
             admin_state = user_states.get(user.id)
             if admin_state == States.ADMIN_BAN_USER:
-                await handle_ban_user(update, context)
+                try:
+                    from handlers.admin import handle_ban_user
+                    await handle_ban_user(update, context)
+                except ImportError:
+                    await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
                 return
             elif admin_state == States.ADMIN_UNBAN_USER:
-                await handle_unban_user(update, context)
+                try:
+                    from handlers.admin import handle_unban_user
+                    await handle_unban_user(update, context)
+                except ImportError:
+                    await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
                 return
             elif admin_state == States.BROADCAST:
-                await handle_broadcast_message(update, context)
+                try:
+                    from handlers.admin import handle_broadcast_message
+                    await handle_broadcast_message(update, context)
+                except ImportError:
+                    await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
                 return
             elif admin_state == States.ADMIN_SEARCH_USER:
-                await handle_user_search(update, context)
+                try:
+                    from handlers.admin import handle_user_search
+                    await handle_user_search(update, context)
+                except ImportError:
+                    await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
                 return
         
-        if user.id == ADMIN_ID:
-            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
-                from handlers.admin import handle_admin_actions
-                await handle_admin_actions(update, context)
-                return
-            
-            if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
-                if text == "📋 Список користувачів":
-                    await show_users_list(update, context)
-                elif text == "🚫 Заблокувати користувача":
-                    await start_ban_user(update, context)
-                elif text == "✅ Розблокувати користувача":
-                    await start_unban_user(update, context)
-                elif text == "📋 Список заблокованих":
-                    await show_banned_users(update, context)
-                elif text == "🔙 Назад до адмін-панелі":
-                    await show_admin_panel(update, context)
-                return
-        
+        # Обробка кнопок меню
         if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
             await start_profile_creation(update, context)
             return
         
         elif text == "👤 Мій профіль":
-            from handlers.profile import show_my_profile
             await show_my_profile(update, context)
             return
         
@@ -415,6 +512,28 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "👨‍💼 Зв'язок з адміном":
             await contact_admin(update, context)
             return
+        
+        elif user.id == ADMIN_ID:
+            if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
+                await handle_admin_actions(update, context)
+                return
+            
+            if text in ["📋 Список користувачів", "🚫 Заблокувати користувача", "✅ Розблокувати користувача", "📋 Список заблокованих", "🔙 Назад до адмін-панелі"]:
+                try:
+                    from handlers.admin import show_users_list, show_banned_users, start_ban_user, start_unban_user, show_admin_panel
+                    if text == "📋 Список користувачів":
+                        await show_users_list(update, context)
+                    elif text == "🚫 Заблокувати користувача":
+                        await start_ban_user(update, context)
+                    elif text == "✅ Розблокувати користувача":
+                        await start_unban_user(update, context)
+                    elif text == "📋 Список заблокованих":
+                        await show_banned_users(update, context)
+                    elif text == "🔙 Назад до адмін-панелі":
+                        await show_admin_panel(update, context)
+                except ImportError:
+                    await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
+                return
         
         await update.message.reply_text(
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
