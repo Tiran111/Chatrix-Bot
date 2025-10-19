@@ -13,8 +13,7 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-        self.init_db()
-        self.update_database_structure()
+        self.check_and_update_db()  # Новий метод, який не видаляє дані
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
