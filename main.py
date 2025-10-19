@@ -25,8 +25,8 @@ try:
         
 except ImportError as e:
     print(f"⚠️ PostgreSQL не доступний: {e}")
-    from database.models import db
-    print("ℹ️ Використовується SQLite база даних")
+    from database_postgres import db  # Використовуємо PostgreSQL як основну
+    print("ℹ️ Використовується PostgreSQL база даних")
 
 # Налаштування логування
 logging.basicConfig(
@@ -46,6 +46,11 @@ application = None
 event_loop = None
 bot_initialized = False
 bot_initialization_started = False
+
+# Додаємо необхідні імпорти
+from keyboards.main_menu import get_main_menu
+from utils.states import user_states, States
+from config import ADMIN_ID
 
 def keep_alive():
     """Функція для підтримки активності додатку без requests"""
@@ -103,22 +108,17 @@ def run_async_tasks():
 async_thread = threading.Thread(target=run_async_tasks, daemon=True)
 async_thread.start()
 
-def setup_handlers(application):
-    """Налаштування обробників повідомлень"""
-    logger.info("🔄 Налаштування обробників...")
+async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Детальна відладка бота"""
+    user = update.effective_user
     
-    # Додайте цю функцію всередині setup_handlers:
-    async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Детальна відладка бота"""
-        user = update.effective_user
+    try:
+        user_data = db.get_user(user.id)
+        user_count = db.get_users_count()
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
         
-        try:
-            user_data = db.get_user(user.id)
-            user_count = db.get_users_count()
-            stats = db.get_statistics()
-            male, female, total_active, goals_stats = stats
-            
-            message = f"""
+        message = f"""
 🔧 *ДЕТАЛЬНА ВІДЛАДКА БОТА*
 
 📊 *База даних:* PostgreSQL ✅
@@ -129,76 +129,46 @@ def setup_handlers(application):
 
 *Тестування функцій:*
 """
-            
-            # Тест пошуку
-            try:
-                random_user = db.get_random_user(user.id)
-                if random_user:
-                    message += f"🔍 *Пошук:* ✅ Знайдено {random_user['first_name']}\n"
+        
+        # Тест пошуку
+        try:
+            random_user = db.get_random_user(user.id)
+            if random_user:
+                if isinstance(random_user, dict):
+                    user_name = random_user.get('first_name', 'Користувач')
                 else:
-                    message += f"🔍 *Пошук:* ⚠️ Не знайдено користувачів\n"
-            except Exception as e:
-                message += f"🔍 *Пошук:* ❌ Помилка - {str(e)[:100]}\n"
-                
-            # Тест лайків
-            try:
-                can_like, like_msg = db.can_like_today(user.id)
-                message += f"❤️ *Лайки:* {like_msg}\n"
-            except Exception as e:
-                message += f"❤️ *Лайки:* ❌ Помилка - {str(e)[:100]}\n"
-                
-            # Тест матчів
-            try:
-                matches = db.get_user_matches(user.id)
-                message += f"💌 *Матчі:* {len(matches)} знайдено\n"
-            except Exception as e:
-                message += f"💌 *Матчі:* ❌ Помилка - {str(e)[:100]}\n"
-                
-            # Тест фото
-            try:
-                photos = db.get_profile_photos(user.id)
-                message += f"📷 *Фото:* {len(photos)} додано\n"
-            except Exception as e:
-                message += f"📷 *Фото:* ❌ Помилка - {str(e)[:100]}\n"
-                
-            await update.message.reply_text(message, parse_mode='Markdown')
-            
+                    user_name = random_user[3] if len(random_user) > 3 else 'Користувач'
+                message += f"🔍 *Пошук:* ✅ Знайдено {user_name}\n"
+            else:
+                message += f"🔍 *Пошук:* ⚠️ Не знайдено користувачів\n"
         except Exception as e:
-            await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
-    
-    # Додаємо debug команду
-    application.add_handler(CommandHandler("debug", debug_bot))
-    print("✅ Debug команда додана")
-    
-    # Решта ваших обробників залишається без змін...
-    application.add_handler(CommandHandler("start", start))
-    # ... інші обробники)
-    
-    # Обробники кнопок
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
-    app_instance.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    app_instance.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Взаємний лайк$'), handle_like_back))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    app_instance.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-    app_instance.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-    app_instance.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    app_instance.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-    
-    # Адмін обробники
-    app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
-    
-    # Фото та універсальний обробник
-    app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
-
-    app_instance.add_error_handler(error_handler)
-    logger.info("✅ Всі обробники налаштовано")
+            message += f"🔍 *Пошук:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест лайків
+        try:
+            can_like, like_msg = db.can_like_today(user.id)
+            message += f"❤️ *Лайки:* {like_msg}\n"
+        except Exception as e:
+            message += f"❤️ *Лайки:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест матчів
+        try:
+            matches = db.get_user_matches(user.id)
+            message += f"💌 *Матчі:* {len(matches)} знайдено\n"
+        except Exception as e:
+            message += f"💌 *Матчі:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест фото
+        try:
+            photos = db.get_profile_photos(user.id)
+            message += f"📷 *Фото:* {len(photos)} додано\n"
+        except Exception as e:
+            message += f"📷 *Фото:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        await update.message.reply_text(message, parse_mode='Markdown')
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -206,11 +176,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         
         logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
-        
-        from database.models import db
-        from keyboards.main_menu import get_main_menu
-        from utils.states import user_states, States
-        from config import ADMIN_ID
         
         db.add_user(user.id, user.username, user.first_name)
         logger.info(f"✅ Користувач {user.id} доданий в базу")
@@ -317,7 +282,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text if update.message.text else ""
         
         from utils.states import user_states, States
-        from database.models import db
         from handlers.profile import handle_profile_message, handle_main_photo
         from handlers.search import show_user_profile, handle_like, handle_like_back
         from handlers.admin import handle_ban_user, handle_unban_user, handle_broadcast_message, handle_user_search, show_admin_panel, show_users_list, show_banned_users, start_ban_user, start_unban_user
@@ -507,6 +471,43 @@ async def initialize_bot_async():
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
 
+def setup_handlers(application):
+    """Налаштування обробників повідомлень"""
+    logger.info("🔄 Налаштування обробників...")
+    
+    # Додаємо debug команду
+    application.add_handler(CommandHandler("debug", debug_bot))
+    print("✅ Debug команда додана")
+    
+    # Решта ваших обробників залишається без змін...
+    application.add_handler(CommandHandler("start", start))
+    
+    # Обробники кнопок
+    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Взаємний лайк$'), handle_like_back))
+    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    
+    # Адмін обробники
+    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
+    application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
+    
+    # Фото та універсальний обробник
+    application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+
+    application.add_error_handler(error_handler)
+    logger.info("✅ Всі обробники налаштовано")
+
 def init_bot():
     """Ініціалізація бота"""
     global event_loop, bot_initialization_started
@@ -612,98 +613,6 @@ def set_webhook_route():
     except Exception as e:
         logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
-
-# ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
-print("=" * 60)
-print("🔧 ДЕТАЛЬНА ІНФОРМАЦІЯ ПРО БАЗУ ДАНИХ")
-print("=" * 60)
-
-# Перевірка типу бази даних
-if 'postgres' in str(type(db)).lower():
-    print("✅ АКТИВНА БАЗА: PostgreSQL")
-    db_type = "PostgreSQL"
-else:
-    print("ℹ️ АКТИВНА БАЗА: SQLite")
-    db_type = "SQLite"
-
-# Тест базових функцій
-try:
-    user_count = db.get_users_count()
-    print(f"📊 Кількість користувачів: {user_count}")
-    
-    stats = db.get_statistics()
-    male, female, total_active, goals_stats = stats
-    print(f"📈 Статистика: {male} чол., {female} жін., {total_active} актив.")
-    
-    print("✅ Тест бази даних пройдено успішно")
-except Exception as e:
-    print(f"❌ Помилка тесту бази даних: {e}")
-
-print("=" * 60)
-
-# Тестова команда для відладки
-async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Детальна відладка бота"""
-    user = update.effective_user
-    
-    try:
-        user_data = db.get_user(user.id)
-        user_count = db.get_users_count()
-        stats = db.get_statistics()
-        male, female, total_active, goals_stats = stats
-        
-        message = f"""
-🔧 *ДЕТАЛЬНА ВІДЛАДКА БОТА*
-
-📊 *База даних:* {db_type} ✅
-👤 *Ваш ID:* `{user.id}`
-📛 *Ваше ім'я:* {user.first_name}
-📈 *Користувачів всього:* {user_count}
-👥 *Статистика:* {male} чол., {female} жін., {total_active} актив.
-
-*Тестування функцій:*
-"""
-        
-        # Тест пошуку
-        try:
-            random_user = db.get_random_user(user.id)
-            if random_user:
-                message += f"🔍 *Пошук:* ✅ Знайдено {random_user['first_name']}\n"
-            else:
-                message += f"🔍 *Пошук:* ⚠️ Не знайдено користувачів\n"
-        except Exception as e:
-            message += f"🔍 *Пошук:* ❌ Помилка - {str(e)[:100]}\n"
-            
-        # Тест лайків
-        try:
-            can_like, like_msg = db.can_like_today(user.id)
-            message += f"❤️ *Лайки:* {like_msg}\n"
-        except Exception as e:
-            message += f"❤️ *Лайки:* ❌ Помилка - {str(e)[:100]}\n"
-            
-        # Тест матчів
-        try:
-            matches = db.get_user_matches(user.id)
-            message += f"💌 *Матчі:* {len(matches)} знайдено\n"
-        except Exception as e:
-            message += f"💌 *Матчі:* ❌ Помилка - {str(e)[:100]}\n"
-            
-        # Тест фото
-        try:
-            photos = db.get_profile_photos(user.id)
-            message += f"📷 *Фото:* {len(photos)} додано\n"
-        except Exception as e:
-            message += f"📷 *Фото:* ❌ Помилка - {str(e)[:100]}\n"
-            
-        await update.message.reply_text(message, parse_mode='Markdown')
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
-
-# Додаємо обробник debug команди
-def setup_debug_handlers(application):
-    """Налаштування debug обробників"""
-    application.add_handler(CommandHandler("debug", debug_bot))
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)

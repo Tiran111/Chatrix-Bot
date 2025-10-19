@@ -56,7 +56,6 @@ def format_profile_text(user_data, title=""):
     except Exception as e:
         logger.error(f"❌ Помилка форматування профілю: {e}")
         return f"❌ Помилка завантаження профілю"
-
 async def search_profiles(update: Update, context: CallbackContext):
     """Пошук анкет"""
     user = update.effective_user
@@ -82,6 +81,34 @@ async def search_profiles(update: Update, context: CallbackContext):
     await update.message.reply_text("🔍 Шукаю анкети...")
     
     random_user = db.get_random_user(user.id)
+    
+    if random_user:
+        # ВИПРАВЛЕННЯ: Використовуємо правильний спосіб отримання telegram_id
+        if isinstance(random_user, dict):
+            telegram_id = random_user.get('telegram_id')
+        else:
+            telegram_id = random_user[1] if len(random_user) > 1 else None
+            
+        logger.info(f"🔍 [SEARCH] Знайдено користувача: {telegram_id}")
+        
+        if telegram_id:
+            db.add_profile_view(user.id, telegram_id)
+            
+            await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
+            context.user_data['search_users'] = [random_user]
+            context.user_data['current_index'] = 0
+            context.user_data['search_type'] = 'random'
+        else:
+            await update.message.reply_text("❌ Помилка: не вдалося отримати ID користувача")
+    else:
+        await update.message.reply_text(
+            "😔 Наразі немає анкет для перегляду\n\n"
+            "💡 *Можливі причини:*\n"
+            "• Не залишилося анкет за вашими критеріями\n"
+            "• Всі анкети вже переглянуті\n"
+            "• Спробуйте змінити критерії пошуку",
+            reply_markup=get_main_menu(user.id)
+        )
     
     if random_user:
         logger.info(f"🔍 [SEARCH] Знайдено користувача: {random_user[1]}")
