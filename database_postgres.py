@@ -254,45 +254,45 @@ class Database:
             logger.error(f"❌ Помилка оновлення рейтингу: {e}")
 
     def get_random_user(self, current_user_id, city=None):
-    """Отримання випадкового користувача для пошуку"""
-    try:
-        current_user = self.get_user(current_user_id)
-        if not current_user:
-            logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
+        """Отримання випадкового користувача для пошуку"""
+        try:
+            current_user = self.get_user(current_user_id)
+            if not current_user:
+                logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
+                return None
+            
+            seeking_gender = current_user.get('seeking_gender', 'all')
+            current_gender = current_user.get('gender')
+            
+            query = '''
+                SELECT u.* FROM users u
+                WHERE u.telegram_id != %s AND u.age IS NOT NULL 
+                AND u.has_photo = TRUE AND u.is_banned = FALSE
+            '''
+            params = [current_user_id]
+            
+            if seeking_gender != 'all':
+                query += ' AND u.gender = %s'
+                params.append(seeking_gender)
+            
+            if city:
+                query += ' AND u.city LIKE %s'
+                params.append(f'%{city}%')
+            
+            # ДЛЯ АДМІНА - не виключаємо вже лайкнутих користувачів
+            if current_user_id != ADMIN_ID:  # Тільки для звичайних користувачів
+                query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
+                params.append(current_user_id)
+            
+            query += ' ORDER BY RANDOM() LIMIT 1'
+            
+            self.cursor.execute(query, params)
+            user = self.cursor.fetchone()
+            
+            return user
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
             return None
-        
-        seeking_gender = current_user.get('seeking_gender', 'all')
-        current_gender = current_user.get('gender')
-        
-        query = '''
-            SELECT u.* FROM users u
-            WHERE u.telegram_id != %s AND u.age IS NOT NULL 
-            AND u.has_photo = TRUE AND u.is_banned = FALSE
-        '''
-        params = [current_user_id]
-        
-        if seeking_gender != 'all':
-            query += ' AND u.gender = %s'
-            params.append(seeking_gender)
-        
-        if city:
-            query += ' AND u.city LIKE %s'
-            params.append(f'%{city}%')
-        
-        # ДЛЯ АДМІНА - не виключаємо вже лайкнутих користувачів
-        if current_user_id != ADMIN_ID:  # Тільки для звичайних користувачів
-            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
-            params.append(current_user_id)
-        
-        query += ' ORDER BY RANDOM() LIMIT 1'
-        
-        self.cursor.execute(query, params)
-        user = self.cursor.fetchone()
-        
-        return user
-    except Exception as e:
-        logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
-        return None
 
     def add_profile_photo(self, telegram_id, file_id):
         """Додавання фото до профілю"""
@@ -365,46 +365,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка отримання профілю: {e}")
             return None, False
-
-    def get_random_user(self, current_user_id, city=None):
-        """Отримання випадкового користувача для пошуку"""
-        try:
-            current_user = self.get_user(current_user_id)
-            if not current_user:
-                logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
-                return None
-            
-            seeking_gender = current_user.get('seeking_gender', 'all')
-            current_gender = current_user.get('gender')
-            
-            query = '''
-                SELECT u.* FROM users u
-                WHERE u.telegram_id != %s AND u.age IS NOT NULL 
-                AND u.has_photo = TRUE AND u.is_banned = FALSE
-            '''
-            params = [current_user_id]
-            
-            if seeking_gender != 'all':
-                query += ' AND u.gender = %s'
-                params.append(seeking_gender)
-            
-            if city:
-                query += ' AND u.city LIKE %s'
-                params.append(f'%{city}%')
-            
-            # Виключаємо вже лайкнутих користувачів
-            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
-            params.append(current_user_id)
-            
-            query += ' ORDER BY RANDOM() LIMIT 1'
-            
-            self.cursor.execute(query, params)
-            user = self.cursor.fetchone()
-            
-            return user
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
-            return None
 
     def get_users_by_city(self, city, current_user_id):
         """Отримання користувачів за містом"""
@@ -887,43 +847,38 @@ class Database:
                     last_active = user['last_active']
                     if isinstance(last_active, str):
                         last_active = datetime.fromisoformat(last_active.replace('Z', '+00:00'))
-                    days_since_active = (datetime.now() - last_active).days
+                    
+                    days_since_active = (datetime.now().replace(tzinfo=last_active.tzinfo) - last_active).days
                     if days_since_active <= 7:
                         bonus += 0.5
-                except Exception as e:
-                    logger.error(f"❌ Помилка обробки last_active: {e}")
-
-            new_rating = min(base_rating + bonus, 10.0)
+                except:
+                    pass
             
-            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, user_id))
-            self.conn.commit()
-            
-            logger.info(f"✅ Рейтинг розраховано для {user_id}: {new_rating}")
-            return new_rating
-            
+            final_rating = min(base_rating + bonus, 10.0)
+            return round(final_rating, 1)
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
 
-    def reset_database(self):
-        """Скинути базу даних (для адміна)"""
+    def update_all_ratings(self):
+        """Оновити рейтинги всіх користувачів"""
         try:
-            # Видаляємо всі таблиці
-            self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
+            self.cursor.execute('SELECT telegram_id FROM users WHERE age IS NOT NULL')
+            users = self.cursor.fetchall()
             
-            # Перестворюємо таблиці
-            self.init_db()
+            updated_count = 0
+            for user in users:
+                telegram_id = user['telegram_id']
+                new_rating = self.calculate_user_rating(telegram_id)
+                self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
+                updated_count += 1
             
             self.conn.commit()
-            logger.info("✅ Базу даних скинуто та перестворено")
+            logger.info(f"✅ Оновлено рейтинги для {updated_count} користувачів")
             return True
         except Exception as e:
-            logger.error(f"❌ Помилка скидання бази даних: {e}")
+            logger.error(f"❌ Помилка оновлення рейтингів: {e}")
             return False
 
-# Глобальний об'єкт бази даних
+# Глобальний екземпляр бази даних
 db = Database()
