@@ -14,7 +14,7 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         
-        # Перевіряємо чи потрібно скинути БД - ТЕПЕР НІКОЛИ НЕ СКИДАЄМО АВТОМАТИЧНО
+        # Перевіряємо чи потрібно скинути БД
         if self.needs_reset():
             logger.info("🔄 Виявлено проблеми з БД, виконуємо автоматичне скидання...")
             self.force_reset_database()
@@ -23,7 +23,7 @@ class Database:
             self.update_database_structure()
 
     def needs_reset(self):
-        """Перевіряє чи потрібно скинути БД - ТЕПЕР ПЕРЕВІРЯЄМО ТІЛЬКИ КРИТИЧНІ ПОМИЛКИ"""
+        """Перевіряє чи потрібно скинути БД"""
         try:
             self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
             users_exists = self.cursor.fetchone() is not None
@@ -183,7 +183,7 @@ class Database:
             return False
 
     def get_users_by_city(self, city, current_user_id):
-        """Отримання користувачів за містом - ВИПРАВЛЕНА ВЕРСІЯ"""
+        """Отримання користувачів за містом"""
         try:
             current_user = self.get_user(current_user_id)
             if not current_user:
@@ -378,7 +378,6 @@ class Database:
             logger.error(f"❌ Помилка перевірки лайку: {e}")
             return False
 
-    # Інші функції залишаються без змін...
     def get_user_profile(self, telegram_id):
         """Отримання профілю користувача"""
         try:
@@ -641,6 +640,132 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
+
+    # АДМІН МЕТОДИ
+    def get_statistics(self):
+        """Отримання статистики для адміна"""
+        try:
+            # Загальна кількість користувачів
+            self.cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = self.cursor.fetchone()[0]
+            
+            # Кількість активних користувачів (з заповненим профілем)
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND has_photo = TRUE')
+            active_users = self.cursor.fetchone()[0]
+            
+            # Кількість чоловіків та жінок
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = ?', ('male',))
+            male_count = self.cursor.fetchone()[0]
+            
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = ?', ('female',))
+            female_count = self.cursor.fetchone()[0]
+            
+            # Статистика по цілях
+            self.cursor.execute('SELECT goal, COUNT(*) FROM users WHERE goal IS NOT NULL GROUP BY goal')
+            goals_stats = self.cursor.fetchall()
+            
+            return male_count, female_count, active_users, goals_stats
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання статистики: {e}")
+            return 0, 0, 0, []
+
+    def get_users_count(self):
+        """Отримати загальну кількість користувачів"""
+        try:
+            self.cursor.execute('SELECT COUNT(*) FROM users')
+            return self.cursor.fetchone()[0]
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання кількості користувачів: {e}")
+            return 0
+
+    def get_all_active_users(self, admin_id):
+        """Отримати всіх активних користувачів (для адміна)"""
+        try:
+            self.cursor.execute('''
+                SELECT * FROM users 
+                WHERE telegram_id != ? AND age IS NOT NULL 
+                ORDER BY created_at DESC
+            ''', (admin_id,))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання списку користувачів: {e}")
+            return []
+
+    def get_all_users(self):
+        """Отримати всіх користувачів"""
+        try:
+            self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання всіх користувачів: {e}")
+            return []
+
+    def search_user(self, search_query):
+        """Пошук користувача за ID або іменем"""
+        try:
+            query = '''
+                SELECT * FROM users 
+                WHERE telegram_id = ? OR first_name LIKE ? OR username LIKE ?
+                ORDER BY created_at DESC
+            '''
+            self.cursor.execute(query, (search_query, f'%{search_query}%', f'%{search_query}%'))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка пошуку користувача: {e}")
+            return []
+
+    def get_banned_users(self):
+        """Отримати список заблокованих користувачів"""
+        try:
+            self.cursor.execute('SELECT * FROM users WHERE is_banned = TRUE ORDER BY created_at DESC')
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання заблокованих користувачів: {e}")
+            return []
+
+    def ban_user(self, user_id):
+        """Заблокувати користувача"""
+        try:
+            self.cursor.execute('UPDATE users SET is_banned = TRUE WHERE telegram_id = ?', (user_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка блокування користувача: {e}")
+            return False
+
+    def unban_user(self, user_id):
+        """Розблокувати користувача"""
+        try:
+            self.cursor.execute('UPDATE users SET is_banned = FALSE WHERE telegram_id = ?', (user_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка розблокування користувача: {e}")
+            return False
+
+    def cleanup_old_data(self):
+        """Очищення старих даних"""
+        try:
+            # Видаляємо користувачів без активності більше 30 днів
+            self.cursor.execute('''
+                DELETE FROM users 
+                WHERE last_active < datetime('now', '-30 days') 
+                AND age IS NULL
+            ''')
+            
+            # Видаляємо старі фото
+            self.cursor.execute('''
+                DELETE FROM photos 
+                WHERE user_id NOT IN (SELECT id FROM users)
+            ''')
+            
+            self.conn.commit()
+            logger.info("✅ Очищено старі дані")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка очищення даних: {e}")
+            return False
 
 # Глобальний об'єкт бази даних
 db = Database()
