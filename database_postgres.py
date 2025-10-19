@@ -21,6 +21,7 @@ class Database:
             self.conn = psycopg2.connect(database_url, sslmode='require')
             self.cursor = self.conn.cursor(cursor_factory=RealDictCursor)
             self.init_db()
+            self.update_database_structure()
             logger.info("✅ Підключено до PostgreSQL")
         except Exception as e:
             logger.error(f"❌ Помилка підключення до PostgreSQL: {e}")
@@ -99,6 +100,75 @@ class Database:
         self.conn.commit()
         logger.info("✅ База даних PostgreSQL ініціалізована")
 
+    def update_database_structure(self):
+        """Оновлення структури бази даних"""
+        try:
+            logger.info("🔄 Перевірка структури бази даних...")
+            
+            # Перевіряємо наявність стовпців
+            self.cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'users'
+            """)
+            columns = [row['column_name'] for row in self.cursor.fetchall()]
+            
+            logger.info(f"🔍 Наявні стовпці: {columns}")
+            
+            changes_made = False
+            
+            # Додаємо відсутні стовпці
+            if 'first_name' not in columns:
+                logger.info("➕ Додаємо стовпець first_name...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
+                changes_made = True
+            
+            if 'last_active' not in columns:
+                logger.info("➕ Додаємо стовпець last_active...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
+                changes_made = True
+            
+            if 'rating' not in columns:
+                logger.info("➕ Додаємо стовпець rating...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN rating REAL')
+                changes_made = True
+            
+            if 'daily_likes_count' not in columns:
+                logger.info("➕ Додаємо стовпець daily_likes_count...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN daily_likes_count INTEGER')
+                changes_made = True
+            
+            if 'last_like_date' not in columns:
+                logger.info("➕ Додаємо стовпець last_like_date...")
+                self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
+                changes_made = True
+            
+            if changes_made:
+                self.conn.commit()
+                logger.info("✅ Структура бази даних оновлена")
+                self.initialize_new_columns()
+            else:
+                logger.info("✅ Структура бази даних вже актуальна")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка оновлення структури БД: {e}")
+
+    def initialize_new_columns(self):
+        """Ініціалізація значень для нових стовпців"""
+        try:
+            logger.info("🔄 Ініціалізація значень для нових стовпців...")
+            
+            self.cursor.execute("UPDATE users SET first_name = 'Користувач' WHERE first_name IS NULL")
+            self.cursor.execute("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL")
+            self.cursor.execute("UPDATE users SET rating = 5.0 WHERE rating IS NULL")
+            self.cursor.execute("UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL")
+            
+            self.conn.commit()
+            logger.info("✅ Значення для нових стовпців ініціалізовані")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
+
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:
@@ -132,6 +202,7 @@ class Database:
         """Оновлення профілю користувача"""
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
+            logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
             
             self.cursor.execute('''
                 UPDATE users 
@@ -139,13 +210,48 @@ class Database:
                 WHERE telegram_id = %s
             ''', (age, gender, city, seeking_gender, goal, bio, telegram_id))
             
+            # Оновлюємо рейтинг
+            self.update_user_rating(telegram_id)
+            
             self.conn.commit()
-            logger.info(f"✅ Профіль оновлено для {telegram_id}")
+            
+            # Перевіряємо оновлені дані
+            self.cursor.execute('SELECT age, gender, city, seeking_gender, goal FROM users WHERE telegram_id = %s', (telegram_id,))
+            updated_data = self.cursor.fetchone()
+            logger.info(f"✅ Профіль оновлено для {telegram_id}. Перевірка: {updated_data}")
+            
             return True
                 
         except Exception as e:
             logger.error(f"❌ Помилка оновлення профілю: {e}")
             return False
+
+    def update_user_rating(self, telegram_id):
+        """Оновлення рейтингу користувача"""
+        try:
+            user = self.get_user(telegram_id)
+            if not user:
+                return
+            
+            base_rating = 5.0
+            bonus = 0.0
+            
+            if user.get('has_photo'):
+                bonus += 1.0
+            
+            if user.get('bio') and len(user.get('bio', '')) > 20:
+                bonus += 1.0
+            
+            likes_count = user.get('likes_count', 0)
+            bonus += min(likes_count * 0.1, 3.0)
+            
+            new_rating = min(base_rating + bonus, 10.0)
+            
+            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
+            logger.info(f"✅ Рейтинг оновлено для {telegram_id}: {new_rating}")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка оновлення рейтингу: {e}")
 
     def add_profile_photo(self, telegram_id, file_id):
         """Додавання фото до профілю"""
@@ -161,16 +267,14 @@ class Database:
             
             user_id = user['id']
             
-            # Перевіряємо кількість фото
-            self.cursor.execute('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user_id,))
-            photo_count = self.cursor.fetchone()['count']
-            
-            if photo_count >= 3:
+            current_photos = self.get_profile_photos(telegram_id)
+            if len(current_photos) >= 3:
                 logger.error("❌ Досягнуто ліміт фото (максимум 3)")
                 return False
             
             self.cursor.execute('INSERT INTO photos (user_id, file_id) VALUES (%s, %s)', (user_id, file_id))
             self.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (telegram_id,))
+            self.update_user_rating(telegram_id)
             
             self.conn.commit()
             logger.info("✅ Фото успішно додано до бази даних!")
@@ -179,20 +283,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка додавання фото: {e}")
             return False
-
-    def get_profile_photos(self, telegram_id):
-        """Отримання всіх фото профілю"""
-        try:
-            self.cursor.execute('''
-                SELECT p.file_id FROM photos p
-                JOIN users u ON p.user_id = u.id
-                WHERE u.telegram_id = %s
-            ''', (telegram_id,))
-            photos = self.cursor.fetchall()
-            return [photo['file_id'] for photo in photos]
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання фото: {e}")
-            return []
 
     def get_main_photo(self, telegram_id):
         """Отримання першого фото користувача"""
@@ -208,6 +298,20 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка отримання фото: {e}")
             return None
+
+    def get_profile_photos(self, telegram_id):
+        """Отримання всіх фото профілю"""
+        try:
+            self.cursor.execute('''
+                SELECT p.file_id FROM photos p
+                JOIN users u ON p.user_id = u.id
+                WHERE u.telegram_id = %s
+            ''', (telegram_id,))
+            photos = self.cursor.fetchall()
+            return [photo['file_id'] for photo in photos]
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання фото: {e}")
+            return []
 
     def get_user_profile(self, telegram_id):
         """Отримання профілю користувача"""
@@ -230,6 +334,7 @@ class Database:
                 return None
             
             seeking_gender = current_user.get('seeking_gender', 'all')
+            current_gender = current_user.get('gender')
             
             query = '''
                 SELECT u.* FROM users u
@@ -359,6 +464,8 @@ class Database:
                 'UPDATE users SET daily_likes_count = daily_likes_count + 1, last_like_date = %s WHERE telegram_id = %s',
                 (today, from_user_id)
             )
+            
+            self.update_user_rating(to_user_id)
             
             self.conn.commit()
             
@@ -637,7 +744,7 @@ class Database:
             
             self.cursor.execute('''
                 SELECT * FROM users 
-                WHERE first_name LIKE %s OR username LIKE %s
+                WHERE first_name ILIKE %s OR username ILIKE %s
                 ORDER BY created_at DESC
             ''', (f'%{query}%', f'%{query}%'))
             
@@ -756,33 +863,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
-
-    def update_user_rating(self, telegram_id):
-        """Оновлення рейтингу користувача"""
-        try:
-            user = self.get_user(telegram_id)
-            if not user:
-                return
-            
-            base_rating = 5.0
-            bonus = 0.0
-            
-            if user.get('has_photo'):
-                bonus += 1.0
-            
-            if user.get('bio') and len(user.get('bio', '')) > 20:
-                bonus += 1.0
-            
-            likes_count = user.get('likes_count', 0)
-            bonus += min(likes_count * 0.1, 3.0)
-            
-            new_rating = min(base_rating + bonus, 10.0)
-            
-            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
-            logger.info(f"✅ Рейтинг оновлено для {telegram_id}: {new_rating}")
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення рейтингу: {e}")
 
     def reset_database(self):
         """Скинути базу даних (для адміна)"""
