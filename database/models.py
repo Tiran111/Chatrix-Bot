@@ -1,15 +1,20 @@
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime, date
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Шлях до бази даних
-DATABASE_PATH = 'dating_bot.db'
+# Шлях до бази даних - використовуємо персистентний шлях на Render
+if 'RENDER' in os.environ:
+    # На Render використовуємо /tmp для персистентного сховища
+    DATABASE_PATH = '/tmp/dating_bot.db'
+else:
+    DATABASE_PATH = 'dating_bot.db'
 
 class Database:
     def __init__(self):
+        logger.info(f"🔄 Підключення до бази даних: {DATABASE_PATH}")
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
