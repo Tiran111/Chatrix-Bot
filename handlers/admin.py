@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import CallbackContext
 from database.models import db
-from keyboards.main_menu import get_main_menu, get_admin_menu, get_cancel_keyboard
+from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import ADMIN_ID
 from handlers.notifications import notification_system
@@ -36,9 +36,22 @@ async def show_admin_panel(update: Update, context: CallbackContext):
         stats_text += "\n\n🎯 *Цілі знайомств:*"
         for goal, count in goals_stats:
             stats_text += f"\n• {goal}: {count}"
-    
+
     await update.message.reply_text(stats_text, parse_mode='Markdown')
-    await update.message.reply_text("👑 *Адмін панель*\nОберіть дію:", reply_markup=get_admin_menu(), parse_mode='Markdown')
+    
+    # Оновлена клавіатура з кнопкою скидання БД
+    keyboard = [
+        ['📊 Статистика', '👥 Користувачі'],
+        ['📢 Розсилка', '🔄 Оновити базу'],
+        ['🚫 Блокування', '📈 Детальна статистика'],
+        ['🗑️ Скинути БД', '🔙 Головне меню']
+    ]
+    
+    await update.message.reply_text(
+        "👑 *Адмін панель*\nОберіть дію:", 
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True), 
+        parse_mode='Markdown'
+    )
 
 async def handle_admin_actions(update: Update, context: CallbackContext):
     """Обробка дій адміністратора"""
@@ -68,6 +81,9 @@ async def handle_admin_actions(update: Update, context: CallbackContext):
     elif text == "📈 Детальна статистика":
         await show_detailed_stats(update, context)
     
+    elif text == "🗑️ Скинути БД":
+        await reset_database(update, context)
+    
     elif text == "🔙 Головне меню":
         await update.message.reply_text("👋 Повертаємось до головного меню", reply_markup=get_main_menu(user.id))
     
@@ -84,6 +100,29 @@ async def handle_admin_actions(update: Update, context: CallbackContext):
         await show_banned_users(update, context)
     elif text == "🔙 Назад до адмін-панелі":
         await show_admin_panel(update, context)
+
+async def reset_database(update: Update, context: CallbackContext):
+    """Скинути базу даних"""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        return
+    
+    try:
+        await update.message.reply_text("🔄 Скидання бази даних... Це може зайняти кілька секунд.")
+        
+        # Використовуємо метод з models.py
+        success = db.reset_database()
+        
+        if success:
+            await update.message.reply_text("✅ База даних скинута та перестворена!\n\n📝 Тепер потрібно заново заповнити профілі.")
+            # Показуємо оновлену статистику
+            await show_admin_panel(update, context)
+        else:
+            await update.message.reply_text("❌ Помилка скидання БД")
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка скидання БД: {e}")
+        await update.message.reply_text("❌ Помилка скидання БД")
 
 async def show_users_management(update: Update, context: CallbackContext):
     """Керування користувачами"""
