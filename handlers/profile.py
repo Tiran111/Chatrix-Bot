@@ -205,6 +205,19 @@ async def handle_main_photo(update: Update, context: CallbackContext):
     """Обробка додавання фото"""
     user = update.effective_user
     
+    # ФІКС: Перевіряємо чи користувач є в базі
+    user_data = db.get_user(user.id)
+    if not user_data:
+        # Створюємо користувача, якщо його немає
+        logger.info(f"👤 Користувача {user.id} не знайдено, створюємо...")
+        success = db.add_user(user.id, user.username, user.first_name)
+        if success:
+            logger.info(f"✅ Користувача {user.id} успішно створено")
+        else:
+            logger.error(f"❌ Не вдалося створити користувача {user.id}")
+            await update.message.reply_text("❌ Помилка створення профілю")
+            return
+    
     if user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.photo:
         photo = update.message.photo[-1]
         
