@@ -205,56 +205,43 @@ async def handle_like(update: Update, context: CallbackContext):
     try:
         user = update.effective_user
         
-        user_data = db.get_user(user.id)
-        if user_data and user_data.get('is_banned'):
-            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+        # Перевіряємо чи є профіль для лайку
+        if 'current_profile_for_like' not in context.user_data:
+            await update.message.reply_text("❌ Не знайдено профіль для лайку. Спробуйте пошукати знову.")
             return
+            
+        target_user_id = context.user_data['current_profile_for_like']
         
-        # Отримуємо ID користувача з контексту
-        target_user_id = context.user_data.get('current_profile_for_like')
-        
+        # Додаткова перевірка
         if not target_user_id:
-            await update.message.reply_text("❌ Не знайдено профіль для лайку")
+            await update.message.reply_text("❌ Не вдалося отримати ID користувача для лайку")
             return
         
-        logger.info(f"🔍 [LIKE] Користувач {user.id} лайкає {target_user_id}")
-        
-        # Додаємо лайк з перевіркою обмежень
+        # Решта коду залишається без змін...
         success, message = db.add_like(user.id, target_user_id)
         
-        logger.info(f"🔍 [LIKE RESULT] Успіх: {success}, Повідомлення: {message}")
-        
         if success:
-            # Перевіряємо чи це взаємний лайк (матч)
             is_mutual = db.has_liked(target_user_id, user.id)
-            logger.info(f"🔍 [LIKE MUTUAL] Взаємний: {is_mutual}")
-            
             if is_mutual:
-                # Відправляємо сповіщення про матч
-                await notification_system.notify_new_match(context, user.id, target_user_id)
-                
-                # Отримуємо дані користувача для кнопки переходу в Telegram
                 matched_user = db.get_user(target_user_id)
                 if matched_user:
                     username = matched_user.get('username')
                     if username:
                         await update.message.reply_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            f"💬 *Тепер ви можете почати спілкування з {matched_user['first_name']}!*\n"
+                            f"💕 У вас матч! Ви вподобали один одного!\n\n"
+                            f"💬 Тепер ви можете почати спілкування з {matched_user['first_name']}!\n"
                             f"Username: @{username}",
                             parse_mode='Markdown'
                         )
                     else:
                         await update.message.reply_text(
-                            "💕 У вас матч! Ви вподобали один одного!\n\n"
-                            f"ℹ️ *У {matched_user['first_name']} немає username*",
+                            f"💕 У вас матч! Ви вподобали один одного!\n\n"
+                            f"ℹ️ У {matched_user['first_name']} немає username",
                             parse_mode='Markdown'
                         )
                 else:
                     await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
             else:
-                # Відправляємо сповіщення про лайк
-                await notification_system.notify_new_like(context, user.id, target_user_id)
                 await update.message.reply_text(f"❤️ {message}")
         else:
             await update.message.reply_text(f"❌ {message}")
@@ -501,12 +488,6 @@ async def handle_like_back(update: Update, context: CallbackContext):
 async def handle_top_selection(update: Update, context: CallbackContext):
     """Обробка вибору топу"""
     user = update.effective_user
-    
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
     text = update.message.text
     
     if text == "👨 Топ чоловіків":
@@ -523,52 +504,75 @@ async def handle_top_selection(update: Update, context: CallbackContext):
         await update.message.reply_text(f"**{title}** 🏆\n\n*Знайдено анкет: {len(top_users)}*", parse_mode='Markdown')
         
         for i, user_data in enumerate(top_users, 1):
-            user_info = db.get_user_by_id(user_data[1])
-            
-            if user_info:
-                first_name = user_info.get('first_name', 'Користувач')
-                rating = user_info.get('rating', 5.0)
-                likes_count = user_info.get('likes_count', 0)
-            else:
-                first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
-                rating = user_data[14] if len(user_data) > 14 else 5.0
-                likes_count = user_data[12] if len(user_data) > 12 else 0
-            
-            profile_text = f"""🏅 #{i} | ⭐ {rating:.1f} | ❤️ {likes_count} лайків
+            try:
+                # Безпечне отримання даних
+                if isinstance(user_data, dict):
+                    user_info = user_data
+                else:
+                    user_info = db.get_user_by_id(user_data[1]) if len(user_data) > 1 else None
+                
+                if user_info:
+                    first_name = user_info.get('first_name', 'Користувач')
+                    rating = user_info.get('rating', 5.0)
+                    likes_count = user_info.get('likes_count', 0)
+                    age = user_info.get('age', 'Невідомо')
+                    gender = user_info.get('gender', 'Невідомо')
+                    city = user_info.get('city', 'Невідомо')
+                    goal = user_info.get('goal', 'Невідомо')
+                    bio = user_info.get('bio', 'Не вказано')
+                else:
+                    # Якщо не вдалося отримати дані, використовуємо базові
+                    first_name = user_data[3] if len(user_data) > 3 and user_data[3] else 'Користувач'
+                    rating = user_data[14] if len(user_data) > 14 else 5.0
+                    likes_count = user_data[12] if len(user_data) > 12 else 0
+                    age = user_data[4] if len(user_data) > 4 else 'Невідомо'
+                    gender = user_data[5] if len(user_data) > 5 else 'Невідомо'
+                    city = user_data[6] if len(user_data) > 6 else 'Невідомо'
+                    goal = user_data[8] if len(user_data) > 8 else 'Невідомо'
+                    bio = user_data[9] if len(user_data) > 9 and user_data[9] else "Не вказано"
+                
+                profile_text = f"""🏅 #{i} | ⭐ {rating:.1f} | ❤️ {likes_count} лайків
 
 *Ім'я:* {first_name}
-*Вік:* {user_data[4]} років
-*Стать:* {'👨 Чоловік' if user_data[5] == 'male' else '👩 Жінка'}
-*Місто:* {user_data[6]}
-*Ціль:* {user_data[8]}
+*Вік:* {age} років
+*Стать:* {'👨 Чоловік' if gender == 'male' else '👩 Жінка'}
+*Місто:* {city}
+*Ціль:* {goal}
 *⭐ Рейтинг:* {rating:.1f}/10.0
 
 *Про себе:*
-{user_data[9] if user_data[9] else "Не вказано"}"""
-            
-            main_photo = db.get_main_photo(user_data[1])
-            
-            # Зберігаємо поточний профіль для лайку
-            context.user_data['current_profile_for_like'] = user_data[1]
-            
-            if main_photo:
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=profile_text,
-                    parse_mode='Markdown'
+{bio}"""
+                
+                main_photo = db.get_main_photo(user_data[1] if not isinstance(user_data, dict) else user_data.get('telegram_id'))
+                
+                # Зберігаємо поточний профіль для лайку
+                if isinstance(user_data, dict):
+                    context.user_data['current_profile_for_like'] = user_data.get('telegram_id')
+                else:
+                    context.user_data['current_profile_for_like'] = user_data[1] if len(user_data) > 1 else None
+                
+                if main_photo:
+                    await update.message.reply_photo(
+                        photo=main_photo,
+                        caption=profile_text,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text(profile_text, parse_mode='Markdown')
+                
+                # Показуємо меню з кнопкою лайку для топу
+                keyboard = [
+                    ['❤️ Лайк'],
+                    ['➡️ Наступний у топі']
+                ]
+                await update.message.reply_text(
+                    "Оберіть дію:",
+                    reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
                 )
-            else:
-                await update.message.reply_text(profile_text, parse_mode='Markdown')
-            
-            # Показуємо меню з кнопкою лайку для топу
-            keyboard = [
-                ['❤️ Лайк'],
-                ['➡️ Наступний у топі']
-            ]
-            await update.message.reply_text(
-                "Оберіть дію:",
-                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            )
+                
+            except Exception as e:
+                logger.error(f"❌ Помилка показу топу #{i}: {e}")
+                continue
         
         keyboard = [
             ['👨 Топ чоловіків', '👩 Топ жінок'],

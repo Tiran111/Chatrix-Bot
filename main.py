@@ -376,6 +376,14 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ImportError:
         await update.message.reply_text("❌ Функція обробки фото тимчасово недоступна")
 
+async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста версія обробки фото"""
+    try:
+        from handlers.profile import handle_main_photo as real_handle_photo
+        await real_handle_photo(update, context)
+    except ImportError:
+        await update.message.reply_text("❌ Функція обробки фото тимчасово недоступна")
+
 async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Універсальний обробник повідомлень"""
     try:
@@ -541,8 +549,13 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        logger.error(f"❌ Помилка в universal_handler: {e}")
-        await update.message.reply_text("❌ Сталася помилка.")
+        logger.error(f"❌ Помилка в universal_handler: {e}", exc_info=True)
+        # Більш інформативне повідомлення
+        await update.message.reply_text(
+            f"❌ Сталася помилка: {str(e)[:100]}\n\n"
+            f"Спробуйте ще раз або зверніться до адміністратора.",
+            reply_markup=get_main_menu(user.id)
+        )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
