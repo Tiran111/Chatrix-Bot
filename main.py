@@ -9,9 +9,20 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 
+# ДЕТАЛЬНЕ ЛОГУВАННЯ БАЗИ ДАНИХ
+print("🔧 Перевірка бази даних...")
 try:
     from database_postgres import db
     print("✅ Використовується PostgreSQL база даних")
+    print(f"🔗 DATABASE_URL: {os.environ.get('DATABASE_URL', 'Не встановлено')}")
+    
+    # Тестуємо підключення
+    try:
+        test_user = db.get_user(1)  # Тестовий запит
+        print("✅ Підключення до PostgreSQL успішне")
+    except Exception as e:
+        print(f"❌ Помилка підключення до PostgreSQL: {e}")
+        
 except ImportError as e:
     print(f"⚠️ PostgreSQL не доступний: {e}")
     from database.models import db
