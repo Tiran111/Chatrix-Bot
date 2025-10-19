@@ -234,22 +234,24 @@ async def handle_main_photo(update: Update, context: CallbackContext):
                     reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
                 )
             else:
+                # ФІКС: Оновлюємо стан та показуємо головне меню
                 user_states[user.id] = States.START
                 user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
                 await update.message.reply_text(
                     "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль готовий!",
-                    reply_markup=get_main_menu(user.id)
+                    reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
                 )
         else:
             await update.message.reply_text("❌ Помилка додавання фото")
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
+        # ФІКС: Тут теж додаємо головне меню
         user_states[user.id] = States.START
         user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
         photos_count = len(db.get_profile_photos(user.id))
         await update.message.reply_text(
             f"🎉 Профіль створено! Додано {photos_count} фото",
-            reply_markup=get_main_menu(user.id)
+            reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
         )
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:

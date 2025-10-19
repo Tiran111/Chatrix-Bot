@@ -13,19 +13,16 @@ class Database:
         self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
-    
-        # Перевіряємо чи існують таблиці
-        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not self.cursor.fetchone():
-            self.init_db()  # Створюємо таблиці
-        else:
-            self.update_database_structure()  # Оновлюємо структуру
+        
+        # ФІКС: Завжди викликаємо init_db(), але він тепер безпечний
+        self.init_db()  # Цей метод має CREATE TABLE IF NOT EXISTS
+        self.update_database_structure()  # Для нових стовпців
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
         logger.info("🔄 Ініціалізація бази даних...")
 
-        # Таблиця користувачів
+        # Таблиця користувачів - ТІЛЬКИ якщо не існує
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -520,7 +517,7 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка отримання топу за рейтингом: {e}")
             return []
-
+    
     def get_user_likers(self, telegram_id):
         """Отримати список користувачів, які лайкнули поточного користувача"""
         try:
