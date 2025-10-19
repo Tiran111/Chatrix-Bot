@@ -1,12 +1,16 @@
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import CallbackContext
-from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States, user_profiles
 from config import ADMIN_ID
 import logging
 
 logger = logging.getLogger(__name__)
+
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
 
 async def start_profile_creation(update: Update, context: CallbackContext):
     """Початок створення профілю"""

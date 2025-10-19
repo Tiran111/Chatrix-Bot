@@ -1,6 +1,10 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
+from keyboards.main_menu import get_main_menu, get_gallery_menu, get_gallery_navigation, get_profile_navigation
 from keyboards.main_menu import get_main_menu, get_gallery_menu, get_gallery_navigation, get_profile_navigation
 from utils.states import States, user_states, gallery_view_data
 

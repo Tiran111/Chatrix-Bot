@@ -9,6 +9,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 
+try:
+    from database_postgres import db
+    print("✅ Використовується PostgreSQL база даних")
+except ImportError as e:
+    print(f"⚠️ PostgreSQL не доступний: {e}")
+    from database.models import db
+    print("ℹ️ Використовується SQLite база даних")
+
 # Налаштування логування
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

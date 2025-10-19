@@ -1,6 +1,12 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
+from utils.states import user_states, States
+from keyboards.main_menu import get_main_menu
+from config import ADMIN_ID
 from utils.states import user_states, States
 from keyboards.main_menu import get_main_menu
 from config import ADMIN_ID

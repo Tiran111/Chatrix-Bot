@@ -1,7 +1,11 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
+from utils.states import user_states, States
+from keyboards.main_menu import get_main_menu, get_back_to_menu_keyboard
 from utils.states import user_states, States
 from keyboards.main_menu import get_main_menu, get_back_to_menu_keyboard
 

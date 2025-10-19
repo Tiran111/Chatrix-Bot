@@ -1,6 +1,10 @@
 ﻿from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
+from keyboards.main_menu import get_main_menu
 from keyboards.main_menu import get_main_menu
 import asyncio
 import logging

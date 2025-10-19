@@ -1,6 +1,9 @@
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
 from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import ADMIN_ID
