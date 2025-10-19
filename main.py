@@ -103,17 +103,76 @@ def run_async_tasks():
 async_thread = threading.Thread(target=run_async_tasks, daemon=True)
 async_thread.start()
 
-def setup_handlers(app_instance):
-    """Налаштування обробників"""
+def setup_handlers(application):
+    """Налаштування обробників повідомлень"""
     logger.info("🔄 Налаштування обробників...")
     
-    from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
-    from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like, handle_like_back
-    from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
-    from keyboards.main_menu import get_main_menu
+    # Додайте цю функцію всередині setup_handlers:
+    async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Детальна відладка бота"""
+        user = update.effective_user
+        
+        try:
+            user_data = db.get_user(user.id)
+            user_count = db.get_users_count()
+            stats = db.get_statistics()
+            male, female, total_active, goals_stats = stats
+            
+            message = f"""
+🔧 *ДЕТАЛЬНА ВІДЛАДКА БОТА*
+
+📊 *База даних:* PostgreSQL ✅
+👤 *Ваш ID:* `{user.id}`
+📛 *Ваше ім'я:* {user.first_name}
+📈 *Користувачів всього:* {user_count}
+👥 *Статистика:* {male} чол., {female} жін., {total_active} актив.
+
+*Тестування функцій:*
+"""
+            
+            # Тест пошуку
+            try:
+                random_user = db.get_random_user(user.id)
+                if random_user:
+                    message += f"🔍 *Пошук:* ✅ Знайдено {random_user['first_name']}\n"
+                else:
+                    message += f"🔍 *Пошук:* ⚠️ Не знайдено користувачів\n"
+            except Exception as e:
+                message += f"🔍 *Пошук:* ❌ Помилка - {str(e)[:100]}\n"
+                
+            # Тест лайків
+            try:
+                can_like, like_msg = db.can_like_today(user.id)
+                message += f"❤️ *Лайки:* {like_msg}\n"
+            except Exception as e:
+                message += f"❤️ *Лайки:* ❌ Помилка - {str(e)[:100]}\n"
+                
+            # Тест матчів
+            try:
+                matches = db.get_user_matches(user.id)
+                message += f"💌 *Матчі:* {len(matches)} знайдено\n"
+            except Exception as e:
+                message += f"💌 *Матчі:* ❌ Помилка - {str(e)[:100]}\n"
+                
+            # Тест фото
+            try:
+                photos = db.get_profile_photos(user.id)
+                message += f"📷 *Фото:* {len(photos)} додано\n"
+            except Exception as e:
+                message += f"📷 *Фото:* ❌ Помилка - {str(e)[:100]}\n"
+                
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
     
-    # Команди
-    app_instance.add_handler(CommandHandler("start", start))
+    # Додаємо debug команду
+    application.add_handler(CommandHandler("debug", debug_bot))
+    print("✅ Debug команда додана")
+    
+    # Решта ваших обробників залишається без змін...
+    application.add_handler(CommandHandler("start", start))
+    # ... інші обробники)
     
     # Обробники кнопок
     app_instance.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
