@@ -598,8 +598,69 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("debug", debug_bot))
     print("✅ Debug команда додана")
     
+    # Додаємо команду для перевірки профілю
+    async def check_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Перевірка стану профілю"""
+        user = update.effective_user
+        user_data, is_complete = db.get_user_profile(user.id)
+        
+        message = f"""
+🔍 *ПЕРЕВІРКА ПРОФІЛЮ*
+
+👤 ID: {user.id}
+📛 Ім'я: {user.first_name}
+✅ Профіль заповнений: {is_complete}
+
+📊 Дані з бази:
+• Вік: {user_data.get('age') if user_data else 'Немає'}
+• Стать: {user_data.get('gender') if user_data else 'Немає'}
+• Місто: {user_data.get('city') if user_data else 'Немає'}
+• Фото: {user_data.get('has_photo') if user_data else 'Немає'}
+"""
+        await update.message.reply_text(message, parse_mode='Markdown')
+    
+    application.add_handler(CommandHandler("check", check_profile))
+    print("✅ Check команда додана")
+    
+    # Додаємо команду для скидання профілю
+    async def reset_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Скидання профілю для тестування"""
+        user = update.effective_user
+        
+        try:
+            # Скидаємо основні поля профілю
+            db.cursor.execute('''
+                UPDATE users 
+                SET age = NULL, gender = NULL, city = NULL, 
+                    seeking_gender = NULL, goal = NULL, bio = NULL,
+                    has_photo = FALSE
+                WHERE telegram_id = %s
+            ''', (user.id,))
+            db.conn.commit()
+            
+            # Видаляємо фото
+            db.cursor.execute('''
+                DELETE FROM photos 
+                WHERE user_id IN (SELECT id FROM users WHERE telegram_id = %s)
+            ''', (user.id,))
+            db.conn.commit()
+            
+            await update.message.reply_text(
+                "✅ Профіль скинуто! Тепер ви можете створити новий профіль.",
+                reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання профілю: {e}")
+            await update.message.reply_text("❌ Помилка скидання профілю")
+    
+    application.add_handler(CommandHandler("reset", reset_profile))
+    print("✅ Reset команда додана")
+    
     # Решта ваших обробників залишається без змін...
     application.add_handler(CommandHandler("start", start))
+    
+    # ... решта обробників
     
     # Обробники кнопок
     application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
