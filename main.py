@@ -4,7 +4,7 @@ import asyncio
 import threading
 import time
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import urllib.request
 import json
@@ -88,12 +88,10 @@ def setup_handlers(app_instance):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
     
-    # Імпортуємо обробники
     from handlers.profile import start_profile_creation, show_my_profile, handle_main_photo, handle_profile_message
     from handlers.search import search_profiles, search_by_city, show_next_profile, show_top_users, show_matches, show_likes, handle_top_selection, show_user_profile, handle_like, handle_like_back
     from handlers.admin import show_admin_panel, handle_admin_actions, show_users_list, show_banned_users, handle_broadcast_message, start_ban_user, start_unban_user, handle_ban_user, handle_unban_user, handle_user_search
     from keyboards.main_menu import get_main_menu
-    from handlers.callback_handlers import setup_callback_handlers
     
     # Команди
     app_instance.add_handler(CommandHandler("start", start))
@@ -117,9 +115,6 @@ def setup_handlers(app_instance):
     app_instance.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
     app_instance.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
-    # Callback обробники
-    setup_callback_handlers(app_instance)
-    
     # Фото та універсальний обробник
     app_instance.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
     app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
@@ -134,9 +129,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
         
-        from models import db
+        from database.models import db
         from keyboards.main_menu import get_main_menu
-        from states import user_states, States
+        from utils.states import user_states, States
         from config import ADMIN_ID
         
         db.add_user(user.id, user.username, user.first_name)
@@ -183,7 +178,7 @@ async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка кнопки зв'язку з адміном"""
     try:
         user = update.effective_user
-        from states import user_states, States
+        from utils.states import user_states, States
         user_states[user.id] = States.CONTACT_ADMIN
         
         contact_text = f"""👨‍💼 *Зв'язок з адміністратором*
@@ -210,7 +205,7 @@ async def handle_contact_message(update: Update, context: ContextTypes.DEFAULT_T
     try:
         user = update.effective_user
         
-        from states import user_states, States
+        from utils.states import user_states, States
         from keyboards.main_menu import get_main_menu
         from handlers.notifications import notification_system
         
@@ -243,8 +238,8 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         text = update.message.text if update.message.text else ""
         
-        from states import user_states, States
-        from models import db
+        from utils.states import user_states, States
+        from database.models import db
         from handlers.profile import handle_profile_message, handle_main_photo
         from handlers.search import show_user_profile, handle_like, handle_like_back
         from handlers.admin import handle_ban_user, handle_unban_user, handle_broadcast_message, handle_user_search, show_admin_panel, show_users_list, show_banned_users, start_ban_user, start_unban_user
@@ -258,53 +253,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == "🔙 Скасувати":
             user_states[user.id] = States.START
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
-            return
-
-        # Обробка пошуку за містом
-        if text.startswith('🏙️ ') or (context.user_data.get('waiting_for_city') and text != "✏️ Ввести інше місто" and text != "🔙 Меню"):
-            clean_city = text.replace('🏙️ ', '').strip()
-            users = db.get_users_by_city(clean_city, user.id)
-            
-            if users:
-                user_data = users[0]
-                await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
-                context.user_data['search_users'] = users
-                context.user_data['current_index'] = 0
-                context.user_data['search_type'] = 'city'
-            else:
-                await update.message.reply_text(
-                    f"😔 Не знайдено анкет у місті {clean_city}",
-                    reply_markup=get_main_menu(user.id)
-                )
-            
-            context.user_data['waiting_for_city'] = False
-            return
-
-        if text == "✏️ Ввести інше місто":
-            context.user_data['waiting_for_city_input'] = True
-            await update.message.reply_text(
-                "🏙️ Введіть назву міста:",
-                reply_markup=ReplyKeyboardMarkup([['🔙 Скасувати']], resize_keyboard=True)
-            )
-            return
-
-        if context.user_data.get('waiting_for_city_input'):
-            clean_city = text.strip()
-            users = db.get_users_by_city(clean_city, user.id)
-            
-            if users:
-                user_data = users[0]
-                await show_user_profile(update, context, user_data, f"🏙️ Місто: {clean_city}")
-                context.user_data['search_users'] = users
-                context.user_data['current_index'] = 0
-                context.user_data['search_type'] = 'city'
-            else:
-                await update.message.reply_text(
-                    f"😔 Не знайдено анкет у місті {clean_city}",
-                    reply_markup=get_main_menu(user.id)
-                )
-            
-            context.user_data['waiting_for_city_input'] = False
             return
 
         if state == States.CONTACT_ADMIN:

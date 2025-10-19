@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, CallbackQueryHandler
-from models import db
+from database.models import db
 from handlers.notifications import notification_system
 from handlers.search import show_user_profile
 from keyboards.main_menu import get_main_menu
