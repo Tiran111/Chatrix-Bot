@@ -253,6 +253,47 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка оновлення рейтингу: {e}")
 
+    def get_random_user(self, current_user_id, city=None):
+    """Отримання випадкового користувача для пошуку"""
+    try:
+        current_user = self.get_user(current_user_id)
+        if not current_user:
+            logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
+            return None
+        
+        seeking_gender = current_user.get('seeking_gender', 'all')
+        current_gender = current_user.get('gender')
+        
+        query = '''
+            SELECT u.* FROM users u
+            WHERE u.telegram_id != %s AND u.age IS NOT NULL 
+            AND u.has_photo = TRUE AND u.is_banned = FALSE
+        '''
+        params = [current_user_id]
+        
+        if seeking_gender != 'all':
+            query += ' AND u.gender = %s'
+            params.append(seeking_gender)
+        
+        if city:
+            query += ' AND u.city LIKE %s'
+            params.append(f'%{city}%')
+        
+        # ДЛЯ АДМІНА - не виключаємо вже лайкнутих користувачів
+        if current_user_id != ADMIN_ID:  # Тільки для звичайних користувачів
+            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
+            params.append(current_user_id)
+        
+        query += ' ORDER BY RANDOM() LIMIT 1'
+        
+        self.cursor.execute(query, params)
+        user = self.cursor.fetchone()
+        
+        return user
+    except Exception as e:
+        logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
+        return None
+
     def add_profile_photo(self, telegram_id, file_id):
         """Додавання фото до профілю"""
         try:

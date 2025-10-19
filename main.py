@@ -69,29 +69,6 @@ def keep_alive():
 keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
 keep_alive_thread.start()
 
-def setup_handlers(application):
-    """Налаштування обробників повідомлень"""
-    logger.info("🔄 Налаштування обробників...")
-    
-    # ... інші обробники ...
-    
-    # Додаємо команду для тестування сповіщень
-    async def test_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Тестування сповіщень"""
-        try:
-            from handlers.notifications import notification_system
-            # Тестуємо сповіщення про лайк (від адміна до вас)
-            await notification_system.notify_new_like(context, ADMIN_ID, 1385645772)  # Адмін -> ваш ID
-            await update.message.reply_text("✅ Тестове сповіщення про лайк відправлено")
-        except Exception as e:
-            logger.error(f"❌ Помилка тесту сповіщень: {e}")
-            await update.message.reply_text(f"❌ Помилка сповіщень: {e}")
-    
-    application.add_handler(CommandHandler("testnotify", test_notification))
-    print("✅ TestNotify команда додана")
-    
-    # ... решта обробників ...
-
 def validate_environment():
     """Перевірка змінних середовища"""
     required_vars = ['BOT_TOKEN', 'ADMIN_ID']
@@ -217,13 +194,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
             keyboard = [['📝 Заповнити профіль']]
         else:
+            # Меню для всіх користувачів з заповненим профілем
             keyboard = [
                 ['💕 Пошук анкет', '🏙️ По місту'],
-                ['👤 Мій профіль', '✏️ Редагувати профіль'],  # Додано кнопку редагування
+                ['👤 Мій профіль', '📝 Редагувати'],  # Додано кнопку редагування
                 ['❤️ Хто мене лайкнув', '💌 Мої матчі'],
                 ['🏆 Топ', "👨‍💼 Зв'язок з адміном"]
             ]
         
+        # Додаємо адмін панель тільки для адміна
         if user.id == ADMIN_ID:
             keyboard.append(['👑 Адмін панель'])
         
@@ -327,14 +306,6 @@ async def search_by_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ImportError:
         await update.message.reply_text("❌ Функція пошуку за містом тимчасово недоступна")
 
-async def handle_top_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проста версія обробки топу"""
-    try:
-        from handlers.search import handle_top_selection as real_handle_top
-        await real_handle_top(update, context)
-    except ImportError:
-        await update.message.reply_text("❌ Функція топу тимчасово недоступна")
-
 async def show_next_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проста версія наступного профілю"""
     try:
@@ -398,14 +369,6 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         await real_admin_actions(update, context)
     except ImportError:
         await update.message.reply_text("❌ Адмін функції тимчасово недоступні")
-
-async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проста версія обробки фото"""
-    try:
-        from handlers.profile import handle_main_photo as real_handle_photo
-        await real_handle_photo(update, context)
-    except ImportError:
-        await update.message.reply_text("❌ Функція обробки фото тимчасово недоступна")
 
 async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Проста версія обробки фото"""
@@ -500,7 +463,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         
         # Обробка кнопок меню
-        if text == "📝 Заповнити профіль" or text == "✏️ Редагувати профіль":
+        if text == "📝 Заповнити профіль" or text == "📝 Редагувати":
             await start_profile_creation(update, context)
             return
         
@@ -642,19 +605,6 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("debug", debug_bot))
     print("✅ Debug команда додана")
     
-    # Додаємо команду для тестування помилок
-    async def test_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Тестування помилок"""
-        try:
-            # Спеціально викликаємо помилку для тесту
-            raise Exception("Тестова помилка для перевірки логування")
-        except Exception as e:
-            logger.error(f"🔧 ТЕСТ ПОМИЛКИ: {e}", exc_info=True)
-            await update.message.reply_text(f"🔧 Тест помилки: {e}")
-    
-    application.add_handler(CommandHandler("testerror", test_error))
-    print("✅ TestError команда додана")
-    
     # Додаємо команду для перевірки профілю
     async def check_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Перевірка стану профілю"""
@@ -714,13 +664,26 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("reset", reset_profile))
     print("✅ Reset команда додана")
     
+    # Додаємо команду для тестування помилок
+    async def test_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Тестування помилок"""
+        try:
+            # Спеціально викликаємо помилку для тесту
+            raise Exception("Тестова помилка для перевірки логування")
+        except Exception as e:
+            logger.error(f"🔧 ТЕСТ ПОМИЛКИ: {e}", exc_info=True)
+            await update.message.reply_text(f"🔧 Тест помилки: {e}")
+    
+    application.add_handler(CommandHandler("testerror", test_error))
+    print("✅ TestError команда додана")
+    
     # Додаємо команду для тестування сповіщень
     async def test_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Тестування сповіщень"""
         try:
             from handlers.notifications import notification_system
-            await notification_system.notify_new_like(context, 1385645772, ADMIN_ID)  # Ваш ID і адмін ID
-            await update.message.reply_text("✅ Тестове сповіщення відправлено")
+            await notification_system.notify_new_like(context, ADMIN_ID, 1385645772)  # Адмін -> ваш ID
+            await update.message.reply_text("✅ Тестове сповіщення про лайк відправлено")
         except Exception as e:
             logger.error(f"❌ Помилка тесту сповіщень: {e}")
             await update.message.reply_text(f"❌ Помилка сповіщень: {e}")
@@ -728,11 +691,75 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("testnotify", test_notification))
     print("✅ TestNotify команда додана")
     
+    # Додаємо команду для перевірки бази даних
+    async def check_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Перевірка стану бази даних"""
+        try:
+            users = db.get_all_active_users()
+            total_users = db.get_users_count()
+            
+            message = f"""
+📊 *СТАН БАЗИ ДАНИХ*
+
+👥 Всього користувачів: {total_users}
+✅ Активних анкет: {len(users)}
+
+📋 *Список активних користувачів:*
+"""
+            for user in users:
+                if isinstance(user, dict):
+                    user_id = user.get('telegram_id')
+                    name = user.get('first_name', 'Невідомо')
+                    city = user.get('city', 'Невідомо')
+                else:
+                    user_id = user[1] if len(user) > 1 else 'Невідомо'
+                    name = user[3] if len(user) > 3 else 'Невідомо'
+                    city = user[6] if len(user) > 6 else 'Невідомо'
+                
+                message += f"• {name} (ID: {user_id}) - {city}\n"
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка перевірки бази даних: {e}")
+            await update.message.reply_text(f"❌ Помилка: {e}")
+    
+    application.add_handler(CommandHandler("checkdb", check_database))
+    print("✅ CheckDB команда додана")
+    
+    # Додаємо команду для додавання тестового користувача
+    async def add_test_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Додати тестового користувача для пошуку"""
+        try:
+            # Додаємо тестового користувача
+            test_user_id = 123456789  # Змініть на унікальний ID
+            db.add_user(test_user_id, "testuser", "Тестовий Користувач")
+            
+            # Заповнюємо профіль
+            db.update_user_profile(
+                telegram_id=test_user_id,
+                age=25,
+                gender='female',
+                city='Київ',
+                seeking_gender='male',
+                goal='Дружба',
+                bio='Тестовий профіль для перевірки пошуку'
+            )
+            
+            await update.message.reply_text("✅ Тестового користувача додано!")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка додавання тестового користувача: {e}")
+            await update.message.reply_text("❌ Помилка додавання тестового користувача")
+    
+    application.add_handler(CommandHandler("addtest", add_test_user))
+    print("✅ AddTest команда додана")
+    
     # Решта ваших обробників залишається без змін...
     application.add_handler(CommandHandler("start", start))
     
     # Обробники кнопок
-    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|✏️ Редагувати профіль)$'), start_profile_creation))
+    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|📝 Редагувати)$'), start_profile_creation))
     application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
     application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
     application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
