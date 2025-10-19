@@ -5,7 +5,6 @@ try:
 except ImportError:
     from database.models import db
 from keyboards.main_menu import get_main_menu
-from keyboards.main_menu import get_main_menu
 import asyncio
 import logging
 from config import ADMIN_ID
@@ -256,17 +255,17 @@ class NotificationSystem:
     def get_new_likes_today(self, user_id):
         """Отримати кількість нових лайків сьогодні"""
         try:
-            db.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (user_id,))
+            db.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (user_id,))
             user = db.cursor.fetchone()
             if not user:
                 return 0
             
             db.cursor.execute('''
                 SELECT COUNT(*) FROM likes 
-                WHERE to_user_id = ? AND DATE(created_at) = DATE('now')
-            ''', (user[0],))
+                WHERE to_user_id = %s AND DATE(created_at) = CURRENT_DATE
+            ''', (user['id'],))
             result = db.cursor.fetchone()
-            return result[0] if result else 0
+            return result['count'] if result else 0
         except Exception as e:
             logger.error(f"❌ Помилка отримання лайків за день: {e}")
             return 0
@@ -274,7 +273,7 @@ class NotificationSystem:
     def get_new_matches_today(self, user_id):
         """Отримати кількість нових матчів сьогодні"""
         try:
-            db.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (user_id,))
+            db.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (user_id,))
             user = db.cursor.fetchone()
             if not user:
                 return 0
@@ -283,12 +282,12 @@ class NotificationSystem:
                 SELECT COUNT(DISTINCT u.id) FROM users u
                 JOIN likes l1 ON u.id = l1.to_user_id
                 JOIN likes l2 ON u.id = l2.from_user_id
-                WHERE l1.from_user_id = ? AND l2.to_user_id = ? 
-                AND (DATE(l1.created_at) = DATE('now') OR DATE(l2.created_at) = DATE('now'))
-            ''', (user[0], user[0]))
+                WHERE l1.from_user_id = %s AND l2.to_user_id = %s 
+                AND (DATE(l1.created_at) = CURRENT_DATE OR DATE(l2.created_at) = CURRENT_DATE)
+            ''', (user['id'], user['id']))
             
             result = db.cursor.fetchone()
-            return result[0] if result else 0
+            return result['count'] if result else 0
         except Exception as e:
             logger.error(f"❌ Помилка отримання матчів за день: {e}")
             return 0
@@ -296,17 +295,17 @@ class NotificationSystem:
     def get_profile_views_today(self, user_id):
         """Отримати кількість переглядів профілю за день"""
         try:
-            db.cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (user_id,))
+            db.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (user_id,))
             user = db.cursor.fetchone()
             if not user:
                 return 0
             
             db.cursor.execute('''
                 SELECT COUNT(*) FROM profile_views 
-                WHERE viewed_user_id = ? AND DATE(viewed_at) = DATE('now')
-            ''', (user[0],))
+                WHERE viewed_user_id = %s AND DATE(viewed_at) = CURRENT_DATE
+            ''', (user['id'],))
             result = db.cursor.fetchone()
-            return result[0] if result else 0
+            return result['count'] if result else 0
         except Exception as e:
             logger.error(f"❌ Помилка отримання переглядів: {e}")
             return 0
