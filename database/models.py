@@ -10,10 +10,16 @@ DATABASE_PATH = 'dating_bot.db'
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-        self.update_database_structure()
+    self.conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+    self.conn.row_factory = sqlite3.Row
+    self.cursor = self.conn.cursor()
+    
+    # Перевіряємо чи існують таблиці
+    self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if not self.cursor.fetchone():
+        self.init_db()  # Створюємо таблиці
+    else:
+        self.update_database_structure()  # Оновлюємо структуру
 
     def init_db(self):
         """Ініціалізація бази даних з правильними стовпцями"""
