@@ -241,8 +241,13 @@ async def handle_main_photo(update: Update, context: CallbackContext):
                 # ФІКС: Оновлюємо стан та показуємо головне меню
                 user_states[user.id] = States.START
                 user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
+                
+                # Оновлюємо профіль користувача в базі даних
+                db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
+                db.conn.commit()
+                
                 await update.message.reply_text(
-                    "✅ Ви додали максимальну кількість фото (3 фото)\nПрофіль готовий!",
+                    "✅ Ви додали максимальну кількість фото (3 фото)\n🎉 Профіль готовий!",
                     reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
                 )
         else:
@@ -253,6 +258,12 @@ async def handle_main_photo(update: Update, context: CallbackContext):
         user_states[user.id] = States.START
         user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
         photos_count = len(db.get_profile_photos(user.id))
+        
+        # Оновлюємо профіль користувача в базі даних
+        if photos_count > 0:
+            db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
+            db.conn.commit()
+        
         await update.message.reply_text(
             f"🎉 Профіль створено! Додано {photos_count} фото",
             reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ

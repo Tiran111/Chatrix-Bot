@@ -1,5 +1,8 @@
 from telegram import ReplyKeyboardMarkup
-from database.models import db
+try:
+    from database_postgres import db
+except ImportError:
+    from database.models import db
 from config import ADMIN_ID
 
 def get_main_menu(user_id):
@@ -15,8 +18,10 @@ def get_main_menu(user_id):
             ["👨‍💼 Зв'язок з адміном", '👑 Адмін панель']
         ]
     elif not is_complete:
+        # Якщо профіль не заповнений
         keyboard = [['📝 Заповнити профіль']]
     else:
+        # Якщо профіль заповнений
         keyboard = [
             ['💕 Пошук анкет', '🏙️ По місту'],
             ['👤 Мій профіль', '❤️ Хто мене лайкнув'],

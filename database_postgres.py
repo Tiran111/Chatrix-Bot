@@ -180,26 +180,12 @@ class Database:
             logger.error(f"❌ Помилка додавання фото: {e}")
             return False
 
-    def get_profile_photos(self, telegram_id):
-        """Отримання всіх фото профілю"""
-        try:
-            self.cursor.execute('''
-                SELECT p.file_id FROM photos p
-                JOIN users u ON p.user_id = u.id
-                WHERE u.telegram_id = %s
-            ''', (telegram_id,))
-            photos = self.cursor.fetchall()
-            return [photo['file_id'] for photo in photos]
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання фото: {e}")
-            return []
-
     def get_user_profile(self, telegram_id):
         """Отримання профілю користувача"""
         try:
             self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
             user = self.cursor.fetchone()
-            if user and user['age']:
+            if user and user['age'] is not None:  # перевірка чи заповнений вік
                 return user, True
             return user, False
         except Exception as e:
