@@ -554,9 +554,107 @@ def set_webhook_route():
         logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
 
-if __name__ == "__main__":
-    logger.info("🚀 Запуск додатку...")
-    init_bot()
+# ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
+print("=" * 60)
+print("🔧 ДЕТАЛЬНА ІНФОРМАЦІЯ ПРО БАЗУ ДАНИХ")
+print("=" * 60)
+
+# Перевірка типу бази даних
+if 'postgres' in str(type(db)).lower():
+    print("✅ АКТИВНА БАЗА: PostgreSQL")
+    db_type = "PostgreSQL"
+else:
+    print("ℹ️ АКТИВНА БАЗА: SQLite")
+    db_type = "SQLite"
+
+# Тест базових функцій
+try:
+    user_count = db.get_users_count()
+    print(f"📊 Кількість користувачів: {user_count}")
     
-    logger.info(f"🚀 Запуск Flask сервера на порті {PORT}...")
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+    stats = db.get_statistics()
+    male, female, total_active, goals_stats = stats
+    print(f"📈 Статистика: {male} чол., {female} жін., {total_active} актив.")
+    
+    print("✅ Тест бази даних пройдено успішно")
+except Exception as e:
+    print(f"❌ Помилка тесту бази даних: {e}")
+
+print("=" * 60)
+
+# Тестова команда для відладки
+async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Детальна відладка бота"""
+    user = update.effective_user
+    
+    try:
+        user_data = db.get_user(user.id)
+        user_count = db.get_users_count()
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
+        
+        message = f"""
+🔧 *ДЕТАЛЬНА ВІДЛАДКА БОТА*
+
+📊 *База даних:* {db_type} ✅
+👤 *Ваш ID:* `{user.id}`
+📛 *Ваше ім'я:* {user.first_name}
+📈 *Користувачів всього:* {user_count}
+👥 *Статистика:* {male} чол., {female} жін., {total_active} актив.
+
+*Тестування функцій:*
+"""
+        
+        # Тест пошуку
+        try:
+            random_user = db.get_random_user(user.id)
+            if random_user:
+                message += f"🔍 *Пошук:* ✅ Знайдено {random_user['first_name']}\n"
+            else:
+                message += f"🔍 *Пошук:* ⚠️ Не знайдено користувачів\n"
+        except Exception as e:
+            message += f"🔍 *Пошук:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест лайків
+        try:
+            can_like, like_msg = db.can_like_today(user.id)
+            message += f"❤️ *Лайки:* {like_msg}\n"
+        except Exception as e:
+            message += f"❤️ *Лайки:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест матчів
+        try:
+            matches = db.get_user_matches(user.id)
+            message += f"💌 *Матчі:* {len(matches)} знайдено\n"
+        except Exception as e:
+            message += f"💌 *Матчі:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        # Тест фото
+        try:
+            photos = db.get_profile_photos(user.id)
+            message += f"📷 *Фото:* {len(photos)} додано\n"
+        except Exception as e:
+            message += f"📷 *Фото:* ❌ Помилка - {str(e)[:100]}\n"
+            
+        await update.message.reply_text(message, parse_mode='Markdown')
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
+
+# Додаємо обробник debug команди
+def setup_debug_handlers(application):
+    """Налаштування debug обробників"""
+    application.add_handler(CommandHandler("debug", debug_bot))
+
+# Викликаємо налаштування debug обробників
+setup_debug_handlers(application)
+print("✅ Debug обробники додано")
+
+print("🚀 Бот повністю готовий до роботи!")
+print("=" * 60)
+
+if __name__ == '__main__':
+    # Запуск сервера
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🌐 Запуск Flask сервера на порті {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
