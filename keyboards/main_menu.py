@@ -7,9 +7,18 @@ from config import ADMIN_ID
 
 def get_main_menu(user_id):
     """Генерація головного меню"""
+    # Перетворюємо user_id в int для порівняння
+    try:
+        user_id_int = int(user_id)
+    except:
+        user_id_int = user_id
+    
     user_data, is_complete = db.get_user_profile(user_id)
     
-    if user_id == ADMIN_ID:
+    # Перевіряємо чи це адмін
+    is_admin = (user_id_int == ADMIN_ID)
+    
+    if is_admin:
         # Меню для адміністратора
         keyboard = [
             ['💕 Пошук анкет', '🏙️ По місту'],
@@ -29,24 +38,6 @@ def get_main_menu(user_id):
             ["👨‍💼 Зв'язок з адміном"]
         ]
     
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_admin_menu():
-    """Меню адміністратора"""
-    keyboard = [
-        ['📊 Статистика', '👥 Користувачі'],
-        ['📢 Розсилка', '🔄 Оновити базу'],
-        ['🚫 Блокування', '📈 Детальна статистика'],
-        ['🔙 Головне меню']
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_search_navigation():
-    """Навігація пошуку"""
-    keyboard = [
-        ['❤️ Лайк', '➡️ Далі'],
-        ['🔙 Меню']
-    ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 def get_cancel_keyboard():

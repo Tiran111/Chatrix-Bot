@@ -98,6 +98,9 @@ def validate_environment():
     
     logger.info("✅ Змінні середовища перевірені успішно")
 
+    if user.id == ADMIN_ID:
+    keyboard.append(['👑 Адмін панель'])
+
 def run_async_tasks():
     """Запуск асинхронних завдань в окремому потоці"""
     global event_loop
@@ -596,6 +599,44 @@ async def initialize_bot_async():
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+
+# Додаємо команду для очищення профілю
+async def clear_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Очищення профілю користувача"""
+    user = update.effective_user
+    
+    try:
+        # Видаляємо всі дані профілю
+        db.cursor.execute('''
+            UPDATE users 
+            SET age = NULL, gender = NULL, city = NULL, 
+                seeking_gender = NULL, goal = NULL, bio = NULL,
+                has_photo = FALSE, rating = 5.0
+            WHERE telegram_id = %s
+        ''', (user.id,))
+        
+        # Видаляємо фото
+        db.cursor.execute('''
+            DELETE FROM photos 
+            WHERE user_id IN (SELECT id FROM users WHERE telegram_id = %s)
+        ''', (user.id,))
+        
+        db.conn.commit()
+        
+        # Очищаємо тимчасові дані
+        user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)
+        
+        await update.message.reply_text(
+            "✅ Ваш профіль повністю очищено! Тепер ви можете створити новий профіль.",
+            reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка очищення профілю: {e}")
+        await update.message.reply_text("❌ Помилка очищення профілю")
+
+application.add_handler(CommandHandler("clear", clear_profile))
 
 def setup_handlers(application):
     """Налаштування обробників повідомлень"""

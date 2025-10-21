@@ -280,7 +280,8 @@ class Database:
                 params.append(f'%{city}%')
             
             # ДЛЯ АДМІНА - не виключаємо вже лайкнутих користувачів
-            if current_user_id != ADMIN_ID:  # Тільки для звичайних користувачів
+            admin_id_str = os.environ.get('ADMIN_ID', '0')
+if str(current_user_id) != admin_id_str:  # Тільки для звичайних користувачів
                 query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
                 params.append(current_user_id)
             

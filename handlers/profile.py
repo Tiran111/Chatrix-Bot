@@ -37,6 +37,73 @@ async def start_profile_creation(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
+async def handle_main_photo(update: Update, context: CallbackContext):
+    """Обробка додавання фото"""
+    user = update.effective_user
+    
+    # ФІКС: Перевіряємо чи користувач є в базі
+    user_data = db.get_user(user.id)
+    if not user_data:
+        # Створюємо користувача, якщо його немає
+        logger.info(f"👤 Користувача {user.id} не знайдено, створюємо...")
+        success = db.add_user(user.id, user.username, user.first_name)
+        if success:
+            logger.info(f"✅ Користувача {user.id} успішно створено")
+        else:
+            logger.error(f"❌ Не вдалося створити користувача {user.id}")
+            await update.message.reply_text("❌ Помилка створення профілю")
+            return
+    
+    if user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.photo:
+        photo = update.message.photo[-1]
+        
+        logger.info(f"🔧 [PHOTO] Користувач {user.id} додає фото")
+        
+        # Додаємо фото
+        success = db.add_profile_photo(user.id, photo.file_id)
+        
+        if success:
+            photos = db.get_profile_photos(user.id)
+            if len(photos) < 3:
+                await update.message.reply_text(
+                    f"✅ Фото додано! У вас {len(photos)}/3 фото\nНадішліть ще фото або натисніть '🔙 Завершити'",
+                    reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
+                )
+            else:
+                # ФІКС: Оновлюємо стан та показуємо головне меню
+                user_states[user.id] = States.START
+                user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
+                
+                # Оновлюємо профіль користувача в базі даних
+                db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
+                db.conn.commit()
+                
+                await update.message.reply_text(
+                    "✅ Ви додали максимальну кількість фото (3 фото)\n🎉 Профіль готовий!",
+                    reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
+                )
+        else:
+            await update.message.reply_text("❌ Помилка додавання фото")
+    
+    elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
+        # ФІКС: Тут теж додаємо головне меню
+        user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
+        photos_count = len(db.get_profile_photos(user.id))
+        
+        # Оновлюємо профіль користувача в базі даних
+        if photos_count > 0:
+            db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
+            db.conn.commit()
+        
+        await update.message.reply_text(
+            f"🎉 Профіль створено! Додано {photos_count} фото",
+            reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
+        )
+    
+    elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:
+        await update.message.reply_text("📷 Будь ласка, надішліть фото:")
+
 async def handle_profile_message(update: Update, context: CallbackContext):
     """Обробка повідомлень під час створення профілю"""
     user = update.effective_user
