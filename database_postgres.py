@@ -170,30 +170,30 @@ class Database:
             logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
 
     def add_user(self, telegram_id, username, first_name):
-    """Додавання нового користувача"""
-    try:
-        # Перевіряємо чи існує користувач
-        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-        existing_user = self.cursor.fetchone()
+        """Додавання нового користувача"""
+        try:
+            # Перевіряємо чи існує користувач
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+            existing_user = self.cursor.fetchone()
         
-        if existing_user:
-            logger.info(f"ℹ️ Користувач {telegram_id} вже існує")
+            if existing_user:
+                logger.info(f"ℹ️ Користувач {telegram_id} вже існує")
+                return True
+        
+            # Додаємо нового користувача
+            self.cursor.execute('''
+                INSERT INTO users (telegram_id, username, first_name, created_at, last_active, rating)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (telegram_id, username, first_name, datetime.now(), datetime.now(), 5.0))
+        
+            self.conn.commit()
+            logger.info(f"✅ Користувач {telegram_id} успішно доданий")
             return True
         
-        # Додаємо нового користувача
-        self.cursor.execute('''
-            INSERT INTO users (telegram_id, username, first_name, created_at, last_active, rating)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (telegram_id, username, first_name, datetime.now(), datetime.now(), 5.0))
-        
-        self.conn.commit()
-        logger.info(f"✅ Користувач {telegram_id} успішно доданий")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
-        self.conn.rollback()
-        return False
+        except Exception as e:
+            logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
+            self.conn.rollback()
+            return False
 
     def get_user(self, telegram_id):
         """Отримання користувача за telegram_id"""
