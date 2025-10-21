@@ -83,15 +83,7 @@ async def search_profiles(update: Update, context: CallbackContext):
         
         await update.message.reply_text("🔍 Шукаю анкети...")
         
-        # Отримуємо поточного користувача для критеріїв пошуку
-        current_user = db.get_user(user.id)
-        if not current_user:
-            await update.message.reply_text("❌ Ваш профіль не знайдений")
-            return
-        
-        # Використовуємо місто поточного користувача для пошуку
-        city = current_user.get('city')
-        random_user = db.get_random_user(user.id, city)
+        random_user = db.get_random_user(user.id)
         
         if random_user:
             logger.info(f"🔍 [SEARCH] Знайдено користувача: {random_user.get('telegram_id') if isinstance(random_user, dict) else random_user[1]}")
@@ -110,7 +102,7 @@ async def search_profiles(update: Update, context: CallbackContext):
                 "💡 *Можливі причини:*\n"
                 "• Не залишилося анкет за вашими критеріями\n"
                 "• Всі анкети вже переглянуті\n"
-                "• Спробуйте змінити критерії пошуку або місто",
+                "• Спробуйте змінити критерії пошуку",
                 reply_markup=get_main_menu(user.id),
                 parse_mode='Markdown'
             )

@@ -746,6 +746,18 @@ def setup_handlers(application):
                 reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
             )
             
+    async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Скасування поточної дії"""
+    user = update.effective_user
+    user_states[user.id] = States.START
+    await update.message.reply_text(
+        "✅ Всі дії скасовано. Повертаємось до головного меню.",
+        reply_markup=get_main_menu(user.id)
+    )
+
+    # Додайте цей обробник в setup_handlers:
+    application.add_handler(CommandHandler("cancel", cancel_command))
+
         except Exception as e:
             logger.error(f"❌ Помилка скидання профілю: {e}")
             await update.message.reply_text("❌ Помилка скидання профілю")
