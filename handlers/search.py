@@ -354,122 +354,88 @@ async def show_likes(update: Update, context: CallbackContext):
     """Показати хто мене лайкнув"""
     user = update.effective_user
     
-    user_data = db.get_user(user.id)
-    if user_data and user_data.get('is_banned'):
-        await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-        return
-    
-    likers = db.get_user_likers(user.id)
-    
-    if likers:
-        await update.message.reply_text(f"❤️ *Вас лайкнули ({len(likers)}):*", parse_mode='Markdown')
-        
-        for liker in likers:
-            is_mutual = db.has_liked(user.id, liker[1])
-            status = "💕 МАТЧ" if is_mutual else "❤️ Лайкнув(ла) вас"
-            
-            profile_text = format_profile_text(liker, status)
-            main_photo = db.get_main_photo(liker[1])
-            
-            liked_user = db.get_user(liker[1])
-            username = liked_user.get('username') if liked_user else None
-            
-            if main_photo:
-                caption = profile_text
-                if username:
-                    caption += f"\n\n💬 Username: @{username}"
-                
-                await update.message.reply_photo(
-                    photo=main_photo,
-                    caption=caption,
-                    parse_mode='Markdown'
-                )
-            else:
-                text = profile_text
-                if username:
-                    text += f"\n\n💬 Username: @{username}"
-                
-                await update.message.reply_text(
-                    text,
-                    parse_mode='Markdown'
-                )
-            
-            # Додаємо кнопку для взаємного лайку, якщо ще не матч
-            if not is_mutual:
-                context.user_data['current_profile_for_like'] = liker[1]
-                keyboard = [
-                    ['❤️ Взаємний лайк'],
-                    ['🔙 Назад до лайків']
-                ]
-                await update.message.reply_text(
-                    "Бажаєте поставити взаємний лайк?",
-                    reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-                )
-    else:
-        await update.message.reply_text(
-            "😔 Вас ще ніхто не лайкнув\n\n"
-            "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
-            reply_markup=get_main_menu(user.id),
-            parse_mode='Markdown'
-        )
-
-async def handle_like_back(update: Update, context: CallbackContext):
-    """Обробка взаємного лайку зі списку лайків"""
     try:
-        user = update.effective_user
-        
-        # Отримуємо ID користувача з контексту
-        target_user_id = context.user_data.get('current_profile_for_like')
-        
-        if not target_user_id:
-            await update.message.reply_text("❌ Не знайдено профіль для лайку")
+        user_data = db.get_user(user.id)
+        if user_data and user_data.get('is_banned'):
+            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
             return
         
-        logger.info(f"🔍 [LIKE BACK] Користувач {user.id} лайкає назад {target_user_id}")
+        likers = db.get_user_likers(user.id)
         
-        success, message = db.add_like(user.id, target_user_id)
-        
-        logger.info(f"🔍 [LIKE BACK RESULT] Успіх: {success}, Повідомлення: {message}")
-        
-        if success:
-            current_user = db.get_user(user.id)
-            target_user = db.get_user(target_user_id)
+        if likers:
+            await update.message.reply_text(f"❤️ *Вас лайкнули ({len(likers)}):*", parse_mode='Markdown')
             
-            if current_user and target_user:
-                if db.has_liked(target_user_id, user.id):
-                    match_text = "🎉 У вас новий матч!"
+            for liker in likers:
+                try:
+                    # Визначаємо ID лайкера
+                    if isinstance(liker, dict):
+                        liker_id = liker.get('telegram_id')
+                        is_mutual = db.has_liked(user.id, liker_id)
+                    else:
+                        liker_id = liker[1] if len(liker) > 1 else None
+                        is_mutual = db.has_liked(user.id, liker_id) if liker_id else False
                     
-                    await update.message.reply_text(
-                        f"{match_text}\n\n💞 Тепер ви можете спілкуватися з {target_user['first_name']}!"
-                    )
+                    status = "💕 МАТЧ" if is_mutual else "❤️ Лайкнув(ла) вас"
                     
-                    try:
-                        await context.bot.send_message(
-                            chat_id=target_user_id,
-                            text=f"🎉 У вас новий матч з {current_user['first_name']}!"
+                    # Форматуємо профіль
+                    profile_text = format_profile_text(liker, status)
+                    main_photo = db.get_main_photo(liker_id)
+                    
+                    # Отримуємо username
+                    liked_user = db.get_user(liker_id)
+                    username = liked_user.get('username') if liked_user else None
+                    
+                    if main_photo:
+                        caption = profile_text
+                        if username:
+                            caption += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_photo(
+                            photo=main_photo,
+                            caption=caption,
+                            parse_mode='Markdown'
                         )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {target_user_id} про матч: {e}")
-                else:
-                    await update.message.reply_text(
-                        "❤️ Ви відправили лайк! Очікуйте на взаємність."
-                    )
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=target_user_id,
-                            text=f"❤️ Вас лайкнув(ла) {current_user['first_name']}! Перевірте хто вас лайкнув у меню."
+                    else:
+                        text = profile_text
+                        if username:
+                            text += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_text(
+                            text,
+                            parse_mode='Markdown'
                         )
-                    except Exception as e:
-                        logger.error(f"❌ Не вдалося сповістити користувача {target_user_id} про лайк: {e}")
-            else:
-                await update.message.reply_text("❌ Помилка: користувача не знайдено")
+                    
+                    # Додаємо кнопку для взаємного лайку, якщо ще не матч
+                    if not is_mutual and liker_id:
+                        context.user_data['current_profile_for_like'] = liker_id
+                        keyboard = [
+                            ['❤️ Взаємний лайк'],
+                            ['➡️ Наступний лайк']
+                        ]
+                        await update.message.reply_text(
+                            "Бажаєте поставити взаємний лайк?",
+                            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                        )
+                        break  # Показуємо по одному з можливістю взаємності
+                        
+                except Exception as e:
+                    logger.error(f"❌ Помилка обробки лайкера: {e}")
+                    continue
+                    
         else:
-            await update.message.reply_text(f"❌ {message}")
+            await update.message.reply_text(
+                "😔 Вас ще ніхто не лайкнув\n\n"
+                "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
+                reply_markup=get_main_menu(user.id),
+                parse_mode='Markdown'
+            )
             
     except Exception as e:
-        logger.error(f"❌ Помилка в handle_like_back: {e}", exc_info=True)
-        await update.message.reply_text("❌ Сталася помилка при обробці лайку.")
+        logger.error(f"❌ Помилка показу лайків: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Помилка завантаження лайків. Спробуйте ще раз.",
+            reply_markup=get_main_menu(user.id)
+        )
 
 async def handle_top_selection(update: Update, context: CallbackContext):
     """Обробка вибору топу"""
@@ -557,3 +523,25 @@ async def handle_top_selection(update: Update, context: CallbackContext):
             f"💡 *Порада:* Заповніть профіль повністю та додайте фото, щоб потрапити в топ!",
             reply_markup=get_main_menu(user.id)
         )
+
+        async def handle_top_navigation(update: Update, context: CallbackContext):
+    """Навігація по топу"""
+    user = update.effective_user
+    text = update.message.text
+    
+    if text == "➡️ Наступний у топі":
+        top_users = context.user_data.get('top_users', [])
+        current_index = context.user_data.get('current_top_index', 0)
+        
+        if current_index < len(top_users):
+            # Показуємо наступного користувача
+            user_data = top_users[current_index]
+            
+            # Оновлюємо індекс
+            context.user_data['current_top_index'] = current_index + 1
+            
+            # Показуємо профіль (використовуємо ту саму логіку що й у handle_top_selection)
+            # ... код для показу профілю ...
+            
+        else:
+            await update.message.reply_text("✅ Це останній користувач у топі")
