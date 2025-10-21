@@ -654,28 +654,28 @@ class Database:
             return []
 
     def search_user(self, query):
-    """Пошук користувача за ID або іменем"""
-    try:
+        """Пошук користувача за ID або іменем"""
         try:
-            user_id = int(query)
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (user_id,))
-            result_by_id = self.cursor.fetchall()
-            if result_by_id:
-                return result_by_id
-        except ValueError:
-            pass
+            try:
+                user_id = int(query)
+                self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (user_id,))
+                result_by_id = self.cursor.fetchall()
+                if result_by_id:
+                    return result_by_id
+            except ValueError:
+                pass
         
-        self.cursor.execute('''
-            SELECT * FROM users 
-            WHERE first_name ILIKE %s OR username ILIKE %s
-            ORDER BY created_at DESC
-        ''', (f'%{query}%', f'%{query}%'))
+            self.cursor.execute('''
+                SELECT * FROM users 
+                WHERE first_name ILIKE %s OR username ILIKE %s
+                ORDER BY created_at DESC
+            ''', (f'%{query}%', f'%{query}%'))
         
-        results = self.cursor.fetchall()
-        return results
-    except Exception as e:
-        logger.error(f"❌ Помилка пошуку користувача: {e}")
-        return []
+            results = self.cursor.fetchall()
+            return results
+        except Exception as e:
+            logger.error(f"❌ Помилка пошуку користувача: {e}")
+            return []
 
     def cleanup_old_data(self):
         """Очищення старих даних"""
