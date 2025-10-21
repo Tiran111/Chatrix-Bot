@@ -886,176 +886,33 @@ def init_bot():
 
 @app.route('/')
 def home():
-    """Головна сторінка - ШВИДКА відповідь для Render"""
-    return "🤖 Chatrix Bot is running! Use /start in Telegram.", 200
+    return "🤖 Chatrix Bot is running!", 200
 
 @app.route('/health')
 def health():
-    """Простий health check - ШВИДКО для Render"""
-    return "OK", 200
-
-@app.route('/healthz')
-def healthz():
-    """Kubernetes-style health check"""
     return "OK", 200
 
 @app.route('/ping')
 def ping():
-    """Швидкий ping"""
     return "pong", 200
-
-@app.route('/keepalive')
-def keepalive():
-    """Спеціальний ендпоінт для keep-alive"""
-    return "ALIVE", 200
-
-@app.route('/status')
-def status():
-    """Простий статус"""
-    return {
-        'status': 'running', 
-        'message': '🤖 Chatrix Bot is operational'
-    }, 200
-
-@app.route('/test')
-def test():
-    """Простий тестовий маршрут"""
-    return "✅ Тест успішний! Flask працює правильно.", 200
-
-@app.route('/links')
-def links():
-    """Сторінка з усіма доступними посиланнями"""
-    links_html = """
-    <h1>🔗 Доступні сторінки бота</h1>
-    <ul>
-        <li><a href="/">Головна</a></li>
-        <li><a href="/health">Health Check</a></li>
-        <li><a href="/ping">Ping</a></li>
-        <li><a href="/status">Статус (JSON)</a></li>
-        <li><a href="/test">Тест</a></li>
-        <li><a href="/debug">Дебаг</a></li>
-        <li><a href="/set_webhook">Встановити Webhook</a></li>
-    </ul>
-    <p>🤖 Бот готовий до роботи в Telegram!</p>
-    """
-    return links_html    
-
-@app.route('/debug')
-def debug():
-    """Безпечний дебаг"""
-    try:
-        debug_info = f"""
-        <h1>🤖 Chatrix Bot Debug</h1>
-        <p><strong>Статус бота:</strong> {'🟢 RUNNING' if bot_initialized else '🟡 INITIALIZING'}</p>
-        <p><strong>Application:</strong> {application is not None}</p>
-        <p><strong>Event Loop:</strong> {event_loop is not None}</p>
-        <hr>
-        <p><a href="/">Головна</a> | <a href="/health">Health Check</a> | <a href="/links">Всі посилання</a></p>
-        """
-        return debug_info
-    except Exception as e:
-        return f"❌ Debug помилка: {e}"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook для Telegram - ШВИДКА відповідь"""
+    """Webhook для Telegram"""
     try:
-        # ШВИДКО обробляємо запит
+        if not bot_initialized or application is None:
+            return "Bot initializing", 200
+            
         update_data = request.get_json()
-        
         if update_data is None:
             return "Empty update data", 400
             
-        # Якщо бот не ініціалізований - швидко ініціалізуємо
-        if not bot_initialized or application is None:
-            logger.info("🔄 Ініціалізація бота при першому запиті...")
-            init_bot()
-            # ШВИДКО повертаємо відповідь
-            return "Bot initializing", 200
-            
         update = Update.de_json(update_data, application.bot)
-        
-        # Додаємо в чергу без очікування
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         
         return 'ok'
-        
     except Exception as e:
-        logger.error(f"❌ Помилка в webhook: {e}")
-        return "Error", 200  # ШВИДКО повертаємо 200 навіть при помилці
-
-@app.route('/set_webhook')
-def set_webhook_route():
-    """Встановлення webhook (для тестування)"""
-    logger.info("🔄 Запит на встановлення webhook")
-    try:
-        if not bot_initialized:
-            init_bot()
-            return "🔄 Бот ініціалізується... Спробуйте ще раз через кілька секунд."
-        
-        future = asyncio.run_coroutine_threadsafe(application.bot.set_webhook(WEBHOOK_URL), event_loop)
-        future.result(timeout=30)
-        
-        future_info = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
-        webhook_info = future_info.result(timeout=30)
-        
-        result = f"""
-        <h1>✅ Webhook встановлено!</h1>
-        <p><strong>URL:</strong> {WEBHOOK_URL}</p>
-        <p><strong>Pending updates:</strong> {webhook_info.pending_update_count}</p>
-        <p><strong>Статус:</strong> {webhook_info.status}</p>
-        <p><a href="/">Головна</a> | <a href="/status">Статус</a></p>
-        """
-        return result
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
-        return f"❌ Помилка: {e}"
-
-@app.route('/remove_webhook')
-def remove_webhook_route():
-    """Видалення webhook (для тестування)"""
-    try:
-        if not bot_initialized:
-            return "Бот не ініціалізований"
-        
-        future = asyncio.run_coroutine_threadsafe(application.bot.delete_webhook(), event_loop)
-        future.result(timeout=30)
-        
-        return "✅ Webhook видалено! Бот працює в режимі polling."
-        
-    except Exception as e:
-        return f"❌ Помилка: {e}"
-
-@app.route('/test')
-def test():
-    """Тестовий маршрут"""
-    return "✅ Test successful!", 200      
-
-@app.errorhandler(404)
-def not_found(error):
-    """Обробка 404 помилок"""
-    return """
-    <h1>🤖 Сторінку не знайдено</h1>
-    <p>Це Telegram бот - використовуйте <strong>/start</strong> в Telegram.</p>
-    <p>Доступні сторінки:</p>
-    <ul>
-        <li><a href="/">Головна</a></li>
-        <li><a href="/health">Health Check</a></li>
-        <li><a href="/status">Статус бота</a></li>
-        <li><a href="/debug">Дебаг інформація</a></li>
-        <li><a href="/set_webhook">Встановити Webhook</a></li>
-    </ul>
-    """, 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Обробка 500 помилок"""
-    return """
-    <h1>❌ Внутрішня помилка сервера</h1>
-    <p>Спробуйте оновити сторінку або поверніться пізніше.</p>
-    <p><a href="/">Головна</a> | <a href="/health">Health Check</a></p>
-    """, 500
+        return "Error", 200
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
