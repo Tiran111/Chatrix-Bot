@@ -114,17 +114,16 @@ async def handle_profile_message(update: Update, context: CallbackContext):
         logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
 
         # ШВИДКА перевірка скасування
+    try:
+        user = update.effective_user
+        text = update.message.text
+        state = user_states.get(user.id)
+    
         if text == "🔙 Скасувати":
             user_states[user.id] = States.START
             user_profiles.pop(user.id, None)
             await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
             return
-
-    if text == "🔙 Скасувати":
-        user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)
-        await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
-        return
 
     # Перевіряємо чи існує профіль для користувача
     if user.id not in user_profiles:
@@ -432,39 +431,39 @@ async def show_my_profile(update: Update, context: CallbackContext):
 
 async def start_edit_profile(update: Update, context: CallbackContext):
     """Початок редагування профілю"""
-    user = update.effective_user
-    
-    user_data = db.get_user(user.id)
-    if not user_data or not user_data.get('age'):
+    try:
+        user = update.effective_user
+        
+        user_data = db.get_user(user.id)
+        if not user_data or not user_data.get('age'):
+            await update.message.reply_text(
+                "❌ У вас ще немає профілю. Спочатку заповніть його!",
+                reply_markup=get_main_menu(user.id)
+            )
+            return
+        
+        # Ініціалізуємо редагування - завантажуємо поточні дані
+        user_states[user.id] = States.PROFILE_AGE
+        user_profiles[user.id] = {
+            'age': user_data.get('age'),
+            'gender': user_data.get('gender'),
+            'city': user_data.get('city'),
+            'seeking_gender': user_data.get('seeking_gender', 'all'),
+            'goal': user_data.get('goal'),
+            'bio': user_data.get('bio')
+        }
+        
+        logger.info(f"🔧 [EDIT PROFILE] Початок редагування для {user.id}")
+        
         await update.message.reply_text(
-            "❌ У вас ще немає профілю. Спочатку заповніть його!",
-            reply_markup=get_main_menu(user.id)
+            "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
+            parse_mode='Markdown'
         )
-        return
-    
-    # Ініціалізуємо редагування - завантажуємо поточні дані
-    user_states[user.id] = States.PROFILE_AGE
-    user_profiles[user.id] = {
-        'age': user_data.get('age'),
-        'gender': user_data.get('gender'),
-        'city': user_data.get('city'),
-        'seeking_gender': user_data.get('seeking_gender', 'all'),
-        'goal': user_data.get('goal'),
-        'bio': user_data.get('bio')
-    }
-    
-    logger.info(f"🔧 [EDIT PROFILE] Початок редагування для {user.id}")
-    logger.info(f"🔧 [EDIT PROFILE] Поточні дані: {user_profiles[user.id]}")
-    
-    await update.message.reply_text(
-        "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
-        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
-        parse_mode='Markdown'
-    )
-
-async def update_profile_in_database(update: Update, context: CallbackContext):
-    """Оновлення профілю в базі даних після редагування"""
-    user = update.effective_user
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в start_edit_profile: {e}")
+        await update.message.reply_text("❌ Помилка запуску редагування профілю.")
     
     try:
         if user.id not in user_profiles:
