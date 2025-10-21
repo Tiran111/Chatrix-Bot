@@ -911,51 +911,46 @@ def keepalive():
 
 @app.route('/status')
 def status():
-    """Перевірка стану бота"""
-    status_info = {
-        'bot_initialized': bot_initialized,
-        'bot_initialization_started': bot_initialization_started,
-        'application_exists': application is not None,
-        'event_loop_exists': event_loop is not None,
-        'database_connected': db is not None
-    }
-    
-    if bot_initialized:
-        return {
-            'status': 'running',
-            'details': status_info,
-            'message': '🤖 Бот працює нормально'
-        }
-    else:
-        return {
-            'status': 'initializing', 
-            'details': status_info,
-            'message': '🔄 Бот ініціалізується...'
-        }, 503
+    """Простий статус"""
+    return {
+        'status': 'running', 
+        'message': '🤖 Chatrix Bot is operational'
+    }, 200
 
 @app.route('/test')
 def test():
     """Простий тестовий маршрут"""
     return "✅ Тест успішний! Flask працює правильно.", 200
 
+@app.route('/links')
+def links():
+    """Сторінка з усіма доступними посиланнями"""
+    links_html = """
+    <h1>🔗 Доступні сторінки бота</h1>
+    <ul>
+        <li><a href="/">Головна</a></li>
+        <li><a href="/health">Health Check</a></li>
+        <li><a href="/ping">Ping</a></li>
+        <li><a href="/status">Статус (JSON)</a></li>
+        <li><a href="/test">Тест</a></li>
+        <li><a href="/debug">Дебаг</a></li>
+        <li><a href="/set_webhook">Встановити Webhook</a></li>
+    </ul>
+    <p>🤖 Бот готовий до роботи в Telegram!</p>
+    """
+    return links_html    
+
 @app.route('/debug')
 def debug():
-    """Детальна інформація для дебагу"""
+    """Безпечний дебаг"""
     try:
-        user_count = db.get_users_count()
-        stats = db.get_statistics()
-        male, female, total_active, goals_stats = stats
-        
         debug_info = f"""
         <h1>🤖 Chatrix Bot Debug</h1>
         <p><strong>Статус бота:</strong> {'🟢 RUNNING' if bot_initialized else '🟡 INITIALIZING'}</p>
-        <p><strong>Користувачів в базі:</strong> {user_count}</p>
-        <p><strong>Статистика:</strong> {male} чол., {female} жін., {total_active} актив.</p>
         <p><strong>Application:</strong> {application is not None}</p>
         <p><strong>Event Loop:</strong> {event_loop is not None}</p>
-        <p><strong>База даних:</strong> {db is not None}</p>
         <hr>
-        <p><a href="/health">Health Check</a> | <a href="/ping">Ping</a> | <a href="/status">Status</a></p>
+        <p><a href="/">Головна</a> | <a href="/health">Health Check</a> | <a href="/links">Всі посилання</a></p>
         """
         return debug_info
     except Exception as e:
@@ -1110,36 +1105,10 @@ init_check_thread.start()
 # ==================== SERVER STARTUP ====================
 
 if __name__ == '__main__':
-    # Запуск сервера
     port = int(os.environ.get('PORT', 10000))
     print("=" * 50)
     print(f"🌐 Запуск Flask сервера на порті {port}...")
+    print("🤖 Бот готовий до роботи!")
     print("=" * 50)
-    
-    # ЗАПУСКАЄМО СЕРВЕР ШВИДКО - без ініціалізації бота
-    print("🚀 Flask сервер запускається...")
-    print("🤖 Бот буде ініціалізований при першому запиті")
-    
-    app.run(host='0.0.0.0', port=port, debug=False)
-    
-    # Перевіряємо стан ініціалізації
-    def check_bot_initialization():
-        time.sleep(8)
-        if bot_initialized:
-            logger.info("🎉 Бот успішно ініціалізовано та готовий до роботи!")
-            print("🎉 Бот готовий до роботи!")
-        else:
-            logger.warning("⚠️ Бот ще не ініціалізовано, буде ініціалізовано при першому запиті")
-            print("⚠️ Бот ініціалізується...")
-    
-    init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
-    init_check_thread.start()
-    
-    print(f"🔗 Тестові URL:")
-    print(f"   • Головна: http://localhost:{port}/")
-    print(f"   • Health: http://localhost:{port}/health") 
-    print(f"   • Статус: http://localhost:{port}/status")
-    print(f"   • Дебаг: http://localhost:{port}/debug")
-    print("=" * 60)
     
     app.run(host='0.0.0.0', port=port, debug=False)
