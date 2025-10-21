@@ -93,13 +93,11 @@ def validate_environment():
         admin_id = int(os.environ.get('ADMIN_ID', 0))
         if admin_id == 0:
             raise ValueError("ADMIN_ID не встановлено")
+        logger.info(f"✅ ADMIN_ID перевірено: {admin_id}")
     except ValueError:
         raise ValueError("❌ ADMIN_ID має бути числовим значенням")
     
     logger.info("✅ Змінні середовища перевірені успішно")
-
-    if user.id == ADMIN_ID:
-        keyboard.append(['👑 Адмін панель'])
 
 def run_async_tasks():
     """Запуск асинхронних завдань в окремому потоці"""
@@ -200,7 +198,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Меню для всіх користувачів з заповненим профілем
             keyboard = [
                 ['💕 Пошук анкет', '🏙️ По місту'],
-                ['👤 Мій профіль', '📝 Редагувати'],  # Додано кнопку редагування
+                ['👤 Мій профіль', '📝 Редагувати'],
                 ['❤️ Хто мене лайкнув', '💌 Мої матчі'],
                 ['🏆 Топ', "👨‍💼 Зв'язок з адміном"]
             ]
@@ -600,42 +598,6 @@ async def initialize_bot_async():
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
 
-# Додаємо команду для очищення профілю
-async def clear_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Очищення профілю користувача"""
-    user = update.effective_user
-    
-    try:
-        # Видаляємо всі дані профілю
-        db.cursor.execute('''
-            UPDATE users 
-            SET age = NULL, gender = NULL, city = NULL, 
-                seeking_gender = NULL, goal = NULL, bio = NULL,
-                has_photo = FALSE, rating = 5.0
-            WHERE telegram_id = %s
-        ''', (user.id,))
-        
-        # Видаляємо фото
-        db.cursor.execute('''
-            DELETE FROM photos 
-            WHERE user_id IN (SELECT id FROM users WHERE telegram_id = %s)
-        ''', (user.id,))
-        
-        db.conn.commit()
-        
-        # Очищаємо тимчасові дані
-        user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)
-        
-        await update.message.reply_text(
-            "✅ Ваш профіль повністю очищено! Тепер ви можете створити новий профіль.",
-            reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка очищення профілю: {e}")
-        await update.message.reply_text("❌ Помилка очищення профілю")
-
 def setup_handlers(application):
     """Налаштування обробників повідомлень"""
     logger.info("🔄 Налаштування обробників...")
@@ -874,21 +836,21 @@ def init_bot():
     try:
         validate_environment()
         
-        max_wait_time = 10
+        max_wait_time = 30  # Збільшимо час очікування
         start_time = time.time()
         
         while event_loop is None and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.1)
+            time.sleep(0.5)
             logger.info("⏳ Чекаємо на ініціалізацію event loop...")
         
         if event_loop is None:
-            logger.error("❌ Event loop не ініціалізований протягом 10 секунд")
+            logger.error("❌ Event loop не ініціалізований протягом 30 секунд")
             return
         
         logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
         
         future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=30)
+        future.result(timeout=60)  # Збільшимо таймаут
         logger.info("✅ Бот успішно ініціалізовано")
         
     except Exception as e:
@@ -917,6 +879,29 @@ def keepalive():
     """Спеціальний ендпоінт для keep-alive"""
     return "ALIVE", 200
 
+@app.route('/status')
+def status():
+    """Перевірка стану бота"""
+    status_info = {
+        'bot_initialized': bot_initialized,
+        'bot_initialization_started': bot_initialization_started,
+        'application_exists': application is not None,
+        'event_loop_exists': event_loop is not None
+    }
+    
+    if bot_initialized:
+        return {
+            'status': 'running',
+            'details': status_info,
+            'message': '🤖 Бот працює нормально'
+        }
+    else:
+        return {
+            'status': 'initializing',
+            'details': status_info,
+            'message': '🔄 Бот ініціалізується...'
+        }, 503
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -926,11 +911,13 @@ def webhook():
             logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
             
-            time.sleep(2)
+            # Чекаємо трохи більше
+            time.sleep(3)
             
             if not bot_initialized or application is None:
                 logger.error("❌ Бот все ще не ініціалізований")
-                return "Bot not initialized", 500
+                # Повертаємо 200, щоб Telegram не вважав запит невдалим
+                return "Bot initializing, please try again later", 200
             
         update_data = request.get_json()
         
@@ -997,6 +984,21 @@ except Exception as e:
 print("=" * 60)
 print("🚀 Бот повністю готовий до роботи!")
 print("=" * 60)
+
+# Автоматична ініціалізація бота при старті
+logger.info("🚀 Автоматична ініціалізація бота при старті...")
+init_bot()
+
+# Перевіряємо стан ініціалізації через кілька секунд
+def check_bot_initialization():
+    time.sleep(10)
+    if bot_initialized:
+        logger.info("🎉 Бот успішно ініціалізовано та готовий до роботи!")
+    else:
+        logger.warning("⚠️ Бот ще не ініціалізовано, буде ініціалізовано при першому запиті")
+
+init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
+init_check_thread.start()
 
 if __name__ == '__main__':
     # Запуск сервера
