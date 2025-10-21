@@ -105,7 +105,7 @@ async def handle_main_photo(update: Update, context: CallbackContext):
         await update.message.reply_text("📷 Будь ласка, надішліть фото:")
 
 async def handle_profile_message(update: Update, context: CallbackContext):
-    """Обробка повідомлень під час створення профілю"""
+    """Обробка повідомлень під час створення/редагування профілю"""
     user = update.effective_user
     text = update.message.text
     state = user_states.get(user.id)
@@ -122,6 +122,13 @@ async def handle_profile_message(update: Update, context: CallbackContext):
     if user.id not in user_profiles:
         user_profiles[user.id] = {}
         logger.info(f"🔧 [PROFILE] Створено новий тимчасовий профіль для {user.id}")
+
+    # Визначаємо чи це створення нового профілю чи редагування існуючого
+    is_editing = False
+    existing_user_data = db.get_user(user.id)
+    if existing_user_data and existing_user_data.get('age'):
+        is_editing = True
+        logger.info(f"🔧 [PROFILE] Режим: РЕДАГУВАННЯ для {user.id}")
 
     if state == States.PROFILE_AGE:
         try:
@@ -256,17 +263,33 @@ async def handle_profile_message(update: Update, context: CallbackContext):
             )
             
             if success:
-                user_states[user.id] = States.ADD_MAIN_PHOTO
-                
-                # Перевіряємо збережені дані
-                saved_user = db.get_user(user.id)
-                logger.info(f"🔧 [PROFILE SAVED] Збережені дані: {saved_user}")
-                
-                await update.message.reply_text(
-                    "🎉 *Профіль створено!*\n\nТепер додайте фото для профілю (максимум 3 фото):",
-                    reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
-                    parse_mode='Markdown'
-                )
+                # ВИРІШЕННЯ ПРОБЛЕМИ: різний сценарій для створення та редагування
+                if is_editing:
+                    # РЕДАГУВАННЯ: повертаємо до головного меню
+                    user_states[user.id] = States.START
+                    user_profiles.pop(user.id, None)
+                    
+                    await update.message.reply_text(
+                        "✅ *Профіль успішно оновлено!*",
+                        reply_markup=get_main_menu(user.id),
+                        parse_mode='Markdown'
+                    )
+                    
+                    # Показуємо оновлений профіль
+                    await show_my_profile(update, context)
+                else:
+                    # СТВОРЕННЯ: переходимо до додавання фото
+                    user_states[user.id] = States.ADD_MAIN_PHOTO
+                    
+                    # Перевіряємо збережені дані
+                    saved_user = db.get_user(user.id)
+                    logger.info(f"🔧 [PROFILE SAVED] Збережені дані: {saved_user}")
+                    
+                    await update.message.reply_text(
+                        "🎉 *Профіль створено!*\n\nТепер додайте фото для профілю (максимум 3 фото):",
+                        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
+                        parse_mode='Markdown'
+                    )
             else:
                 await update.message.reply_text("❌ Помилка збереження профілю")
         else:
@@ -405,10 +428,13 @@ async def start_edit_profile(update: Update, context: CallbackContext):
     
     user_data = db.get_user(user.id)
     if not user_data or not user_data.get('age'):
-        await update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
+        await update.message.reply_text(
+            "❌ У вас ще немає профілю. Спочатку заповніть його!",
+            reply_markup=get_main_menu(user.id)
+        )
         return
     
-    # Ініціалізуємо редагування
+    # Ініціалізуємо редагування - завантажуємо поточні дані
     user_states[user.id] = States.PROFILE_AGE
     user_profiles[user.id] = {
         'age': user_data.get('age'),
@@ -418,6 +444,9 @@ async def start_edit_profile(update: Update, context: CallbackContext):
         'goal': user_data.get('goal'),
         'bio': user_data.get('bio')
     }
+    
+    logger.info(f"🔧 [EDIT PROFILE] Початок редагування для {user.id}")
+    logger.info(f"🔧 [EDIT PROFILE] Поточні дані: {user_profiles[user.id]}")
     
     await update.message.reply_text(
         "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
@@ -469,4 +498,197 @@ async def update_profile_in_database(update: Update, context: CallbackContext):
         await update.message.reply_text(
             "❌ Помилка оновлення профілю",
             reply_markup=get_main_menu(user.id)
-        )        
+        )
+
+async def handle_edit_profile(update: Update, context: CallbackContext):
+    """Обробка редагування профілю"""
+    user = update.effective_user
+    text = update.message.text
+    state = user_states.get(user.id)
+
+    logger.info(f"🔧 [EDIT PROFILE] {user.first_name}: '{text}', стан: {state}")
+
+    if text == "🔙 Скасувати":
+        user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)
+        await update.message.reply_text("❌ Редагування скасовано", reply_markup=get_main_menu(user.id))
+        return
+
+    # Перевіряємо чи існує профіль для редагування
+    if user.id not in user_profiles:
+        # Завантажуємо поточні дані з бази
+        user_data = db.get_user(user.id)
+        if not user_data:
+            await update.message.reply_text("❌ Профіль не знайдено", reply_markup=get_main_menu(user.id))
+            return
+        
+        user_profiles[user.id] = {
+            'age': user_data.get('age'),
+            'gender': user_data.get('gender'),
+            'city': user_data.get('city'),
+            'seeking_gender': user_data.get('seeking_gender', 'all'),
+            'goal': user_data.get('goal'),
+            'bio': user_data.get('bio')
+        }
+
+    if state == States.PROFILE_AGE:
+        try:
+            age = int(text)
+            if age < 18 or age > 100:
+                await update.message.reply_text("❌ Вік має бути від 18 до 100 років")
+                return
+            
+            user_profiles[user.id]['age'] = age
+            user_states[user.id] = States.PROFILE_GENDER
+            
+            keyboard = [[KeyboardButton("👨"), KeyboardButton("👩")], [KeyboardButton("🔙 Скасувати")]]
+            await update.message.reply_text(
+                f"✅ Вік: {age} років\n\nОберіть стать:",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Введіть коректний вік (число)")
+
+    elif state == States.PROFILE_GENDER:
+        if text == "👨":
+            user_profiles[user.id]['gender'] = 'male'
+            user_states[user.id] = States.PROFILE_CITY
+            await update.message.reply_text(
+                "✅ Стать: 👨 Чоловік\n\nВведіть ваше місто:",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
+            )
+        elif text == "👩":
+            user_profiles[user.id]['gender'] = 'female'
+            user_states[user.id] = States.PROFILE_CITY
+            await update.message.reply_text(
+                "✅ Стать: 👩 Жінка\n\nВведіть ваше місто:",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
+            )
+        else:
+            await update.message.reply_text("❌ Оберіть стать з кнопок")
+
+    elif state == States.PROFILE_CITY:
+        if len(text) >= 2:
+            user_profiles[user.id]['city'] = text
+            user_states[user.id] = States.PROFILE_SEEKING_GENDER
+            
+            keyboard = [
+                [KeyboardButton("👩 Дівчину"), KeyboardButton("👨 Хлопця")],
+                [KeyboardButton("👫 Всіх")],
+                [KeyboardButton("🔙 Скасувати")]
+            ]
+            await update.message.reply_text(
+                f"✅ Місто: {text}\n\nКого шукаєте?",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        else:
+            await update.message.reply_text("❌ Назва міста закоротка. Спробуйте ще раз:")
+
+    elif state == States.PROFILE_SEEKING_GENDER:
+        if text == "👩 Дівчину":
+            user_profiles[user.id]['seeking_gender'] = 'female'
+            user_states[user.id] = States.PROFILE_GOAL
+        elif text == "👨 Хлопця":
+            user_profiles[user.id]['seeking_gender'] = 'male'
+            user_states[user.id] = States.PROFILE_GOAL
+        elif text == "👫 Всіх":
+            user_profiles[user.id]['seeking_gender'] = 'all'
+            user_states[user.id] = States.PROFILE_GOAL
+        else:
+            await update.message.reply_text("❌ Оберіть варіант з кнопок")
+            return
+        
+        seeking_text = {
+            'female': '👩 Дівчину',
+            'male': '👨 Хлопця', 
+            'all': '👫 Всіх'
+        }.get(user_profiles[user.id]['seeking_gender'])
+        
+        keyboard = [
+            [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
+            [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
+            [KeyboardButton("🔙 Скасувати")]
+        ]
+        
+        await update.message.reply_text(
+            f"✅ Шукаю: {seeking_text}\n\nОберіть ціль знайомства:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+
+    elif state == States.PROFILE_GOAL:
+        goal_map = {
+            '💞 Серйозні стосунки': 'Серйозні стосунки',
+            '👥 Дружба': 'Дружба',
+            '🎉 Разові зустрічі': 'Разові зустрічі',
+            '🏃 Активний відпочинок': 'Активний відпочинок'
+        }
+        
+        if text in goal_map:
+            user_profiles[user.id]['goal'] = goal_map[text]
+            user_states[user.id] = States.PROFILE_BIO
+            
+            await update.message.reply_text(
+                f"✅ Ціль: {text}\n\nНапишіть про себе (мінімум 10 символів):",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
+            )
+        else:
+            await update.message.reply_text("❌ Оберіть ціль з кнопок")
+
+    elif state == States.PROFILE_BIO:
+        if len(text) >= 10:
+            user_profiles[user.id]['bio'] = text
+            
+            # ЗБЕРІГАЄМО ЗМІНИ В БАЗУ ДАНИХ
+            success = await save_profile_changes(update, context)
+            
+            if success:
+                await update.message.reply_text(
+                    "✅ Профіль успішно оновлено!",
+                    reply_markup=get_main_menu(user.id)
+                )
+                
+                # Показуємо оновлений профіль
+                await show_my_profile(update, context)
+            else:
+                await update.message.reply_text(
+                    "❌ Помилка збереження профілю",
+                    reply_markup=get_main_menu(user.id)
+                )
+        else:
+            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
+
+async def save_profile_changes(update: Update, context: CallbackContext):
+    """Збереження змін профілю в базу даних"""
+    user = update.effective_user
+    
+    try:
+        if user.id not in user_profiles:
+            await update.message.reply_text("❌ Помилка: дані профілю не знайдені")
+            return False
+        
+        profile_data = user_profiles[user.id]
+        
+        success = db.update_user_profile(
+            telegram_id=user.id,
+            age=profile_data['age'],
+            gender=profile_data['gender'],
+            city=profile_data['city'],
+            seeking_gender=profile_data.get('seeking_gender', 'all'),
+            goal=profile_data['goal'],
+            bio=profile_data['bio']
+        )
+        
+        if success:
+            # Очищаємо тимчасові дані
+            user_profiles.pop(user.id, None)
+            user_states[user.id] = States.START
+            
+            logger.info(f"✅ Профіль оновлено для {user.id}")
+            return True
+        else:
+            logger.error(f"❌ Помилка оновлення профілю для {user.id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка збереження профілю: {e}")
+        return False 
