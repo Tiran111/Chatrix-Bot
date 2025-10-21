@@ -106,11 +106,19 @@ async def handle_main_photo(update: Update, context: CallbackContext):
 
 async def handle_profile_message(update: Update, context: CallbackContext):
     """Обробка повідомлень під час створення/редагування профілю"""
-    user = update.effective_user
-    text = update.message.text
-    state = user_states.get(user.id)
+    try:
+        user = update.effective_user
+        text = update.message.text
+        state = user_states.get(user.id)
 
-    logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
+        logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
+
+        # ШВИДКА перевірка скасування
+        if text == "🔙 Скасувати":
+            user_states[user.id] = States.START
+            user_profiles.pop(user.id, None)
+            await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+            return
 
     if text == "🔙 Скасувати":
         user_states[user.id] = States.START

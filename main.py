@@ -51,17 +51,27 @@ bot_initialized = False
 bot_initialization_started = False
 
 def keep_alive():
-    """Функція для підтримки активності додатку без requests"""
+    """Функція для підтримки активності додатку"""
     while True:
         try:
-            # Використовуємо urllib замість requests
-            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=10) as response:
-                logger.info(f"🔄 Keep-alive: {response.getcode()}")
-        except Exception as e:
-            logger.error(f"❌ Keep-alive помилка: {e}")
+            # Використовуємо короткі URL для keep-alive
+            urls = [
+                'https://chatrix-bot-4m1p.onrender.com/health',
+                'https://chatrix-bot-4m1p.onrender.com/ping'
+            ]
+            
+            for url in urls:
+                try:
+                    with urllib.request.urlopen(url, timeout=5) as response:
+                        logger.info(f"🔄 Keep-alive: {response.getcode()} - {url}")
+                except Exception as e:
+                    logger.error(f"❌ Keep-alive помилка для {url}: {e}")
         
-        # Чекаємо 4 хвилини між запитами
-        time.sleep(240)
+        except Exception as e:
+            logger.error(f"❌ Keep-alive критична помилка: {e}")
+        
+        # Чекаємо 2 хвилини між запитами (менше для безкоштовного плану)
+        time.sleep(120)
 
 # Запускаємо keep-alive в окремому потоці
 keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
@@ -577,10 +587,13 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Помилка в error_handler: {e}")
 
 async def process_update(update):
-    """Обробка оновлення"""
+    """Обробка оновлення з таймаутом"""
     try:
-        await application.process_update(update)
+        # Обробляємо оновлення з таймаутом 25 секунд (менше ніж 30s Render timeout)
+        await asyncio.wait_for(application.process_update(update), timeout=25.0)
         logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
+    except asyncio.TimeoutError:
+        logger.error(f"❌ Таймаут обробки оновлення: {update.update_id}")
     except Exception as e:
         logger.error(f"❌ Помилка обробки оновлення: {e}")
 
@@ -845,7 +858,7 @@ def setup_handlers(application):
     logger.info("✅ Всі обробники налаштовано")
 
 def init_bot():
-    """Ініціалізація бота"""
+    """Ініціалізація бота - оптимізована версія"""
     global event_loop, bot_initialization_started
     
     if bot_initialization_started:
@@ -856,25 +869,25 @@ def init_bot():
     try:
         validate_environment()
         
-        max_wait_time = 30  # Збільшимо час очікування
+        max_wait_time = 15  # Зменшили час очікування
         start_time = time.time()
         
         while event_loop is None and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.5)
+            time.sleep(0.1)
             logger.info("⏳ Чекаємо на ініціалізацію event loop...")
         
         if event_loop is None:
-            logger.error("❌ Event loop не ініціалізований протягом 30 секунд")
+            logger.error("❌ Event loop не ініціалізований")
             return
         
         logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
         
         future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=60)  # Збільшимо таймаут
+        future.result(timeout=30)  # Зменшили таймаут
         logger.info("✅ Бот успішно ініціалізовано")
         
     except Exception as e:
-        logger.error(f"❌ Помилка запуску бота: {e}", exc_info=True)
+        logger.error(f"❌ Помилка запуску бота: {e}")
 
 @app.route('/')
 def home():
@@ -898,6 +911,34 @@ def ping():
 def keepalive():
     """Спеціальний ендпоінт для keep-alive"""
     return "ALIVE", 200
+
+@app.route('/')
+def home():
+    """Головна сторінка - швидка відповідь"""
+    return "🤖 Chatrix Bot is running!", 200
+
+@app.route('/health')
+def health():
+    """Простий health check"""
+    return "OK", 200
+
+@app.route('/healthz')
+def healthz():
+    """Kubernetes-style health check"""
+    return "OK", 200
+
+@app.route('/ping')
+def ping():
+    """Швидкий ping"""
+    return "pong", 200
+
+@app.route('/ready')
+def ready():
+    """Перевірка готовності бота"""
+    if bot_initialized and application is not None:
+        return "READY", 200
+    else:
+        return "INITIALIZING", 503
 
 @app.route('/status')
 def status():
@@ -931,14 +972,13 @@ def webhook():
             logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
             
-            # Чекаємо трохи більше
-            time.sleep(3)
+            time.sleep(2)  # Зменшили затримку
             
             if not bot_initialized or application is None:
                 logger.error("❌ Бот все ще не ініціалізований")
-                # Повертаємо 200, щоб Telegram не вважав запит невдалим
-                return "Bot initializing, please try again later", 200
-            
+                # ШВИДКО повертаємо відповідь для Telegram
+                return "Bot initializing", 200
+        
         update_data = request.get_json()
         
         if update_data is None:
@@ -947,14 +987,16 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
+        # ШВИДКЕ додавання в чергу без очікування
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
         
     except Exception as e:
-        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
-        return "Error", 500
+        logger.error(f"❌ Критична помилка в webhook: {e}")
+        # ШВИДКО повертаємо відповідь навіть при помилці
+        return "Error", 200  # Змінили на 200 щоб Telegram не повторював запит
 
 @app.route('/set_webhook')
 def set_webhook_route():
