@@ -889,33 +889,14 @@ def init_bot():
     except Exception as e:
         logger.error(f"❌ Помилка запуску бота: {e}")
 
+# ==================== FLASK ROUTES ====================
+
 @app.route('/')
 def home():
+    """Головна сторінка"""
     if not bot_initialization_started:
         init_bot()
-    return "🤖 Chatrix Bot is running!"
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-@app.route('/healthz')
-def healthz():
-    return "OK", 200
-
-@app.route('/ping')
-def ping():
-    return "pong", 200
-
-@app.route('/keepalive')
-def keepalive():
-    """Спеціальний ендпоінт для keep-alive"""
-    return "ALIVE", 200
-
-@app.route('/')
-def home():
-    """Головна сторінка - швидка відповідь"""
-    return "🤖 Chatrix Bot is running!", 200
+    return "🤖 Chatrix Bot is running! Use /start in Telegram.", 200
 
 @app.route('/health')
 def health():
@@ -932,13 +913,10 @@ def ping():
     """Швидкий ping"""
     return "pong", 200
 
-@app.route('/ready')
-def ready():
-    """Перевірка готовності бота"""
-    if bot_initialized and application is not None:
-        return "READY", 200
-    else:
-        return "INITIALIZING", 503
+@app.route('/keepalive')
+def keepalive():
+    """Спеціальний ендпоінт для keep-alive"""
+    return "ALIVE", 200
 
 @app.route('/status')
 def status():
@@ -947,7 +925,8 @@ def status():
         'bot_initialized': bot_initialized,
         'bot_initialization_started': bot_initialization_started,
         'application_exists': application is not None,
-        'event_loop_exists': event_loop is not None
+        'event_loop_exists': event_loop is not None,
+        'database_connected': db is not None
     }
     
     if bot_initialized:
@@ -958,13 +937,42 @@ def status():
         }
     else:
         return {
-            'status': 'initializing',
+            'status': 'initializing', 
             'details': status_info,
             'message': '🔄 Бот ініціалізується...'
         }, 503
 
+@app.route('/test')
+def test():
+    """Простий тестовий маршрут"""
+    return "✅ Тест успішний! Flask працює правильно.", 200
+
+@app.route('/debug')
+def debug():
+    """Детальна інформація для дебагу"""
+    try:
+        user_count = db.get_users_count()
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
+        
+        debug_info = f"""
+        <h1>🤖 Chatrix Bot Debug</h1>
+        <p><strong>Статус бота:</strong> {'🟢 RUNNING' if bot_initialized else '🟡 INITIALIZING'}</p>
+        <p><strong>Користувачів в базі:</strong> {user_count}</p>
+        <p><strong>Статистика:</strong> {male} чол., {female} жін., {total_active} актив.</p>
+        <p><strong>Application:</strong> {application is not None}</p>
+        <p><strong>Event Loop:</strong> {event_loop is not None}</p>
+        <p><strong>База даних:</strong> {db is not None}</p>
+        <hr>
+        <p><a href="/health">Health Check</a> | <a href="/ping">Ping</a> | <a href="/status">Status</a></p>
+        """
+        return debug_info
+    except Exception as e:
+        return f"❌ Debug помилка: {e}"
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Webhook для Telegram"""
     try:
         logger.info("📨 Отримано webhook запит від Telegram")
         
@@ -972,13 +980,12 @@ def webhook():
             logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
             init_bot()
             
-            time.sleep(2)  # Зменшили затримку
+            time.sleep(2)
             
             if not bot_initialized or application is None:
                 logger.error("❌ Бот все ще не ініціалізований")
-                # ШВИДКО повертаємо відповідь для Telegram
-                return "Bot initializing", 200
-        
+                return "Bot initializing, please try again later", 200
+            
         update_data = request.get_json()
         
         if update_data is None:
@@ -987,35 +994,82 @@ def webhook():
             
         update = Update.de_json(update_data, application.bot)
         
-        # ШВИДКЕ додавання в чергу без очікування
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
         
     except Exception as e:
-        logger.error(f"❌ Критична помилка в webhook: {e}")
-        # ШВИДКО повертаємо відповідь навіть при помилці
-        return "Error", 200  # Змінили на 200 щоб Telegram не повторював запит
+        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
+        return "Error", 200
 
 @app.route('/set_webhook')
 def set_webhook_route():
+    """Встановлення webhook (для тестування)"""
     logger.info("🔄 Запит на встановлення webhook")
     try:
         if not bot_initialized:
             init_bot()
             return "🔄 Бот ініціалізується... Спробуйте ще раз через кілька секунд."
         
-        future = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
-        webhook_info = future.result(timeout=30)
+        future = asyncio.run_coroutine_threadsafe(application.bot.set_webhook(WEBHOOK_URL), event_loop)
+        future.result(timeout=30)
         
-        result = f"✅ Webhook встановлено: {WEBHOOK_URL}<br>Pending updates: {webhook_info.pending_update_count}"
-        logger.info(f"✅ Результат перевірки webhook: {result}")
+        future_info = asyncio.run_coroutine_threadsafe(application.bot.get_webhook_info(), event_loop)
+        webhook_info = future_info.result(timeout=30)
+        
+        result = f"""
+        <h1>✅ Webhook встановлено!</h1>
+        <p><strong>URL:</strong> {WEBHOOK_URL}</p>
+        <p><strong>Pending updates:</strong> {webhook_info.pending_update_count}</p>
+        <p><strong>Статус:</strong> {webhook_info.status}</p>
+        <p><a href="/">Головна</a> | <a href="/status">Статус</a></p>
+        """
         return result
         
     except Exception as e:
-        logger.error(f"❌ Помилка перевірки webhook: {e}", exc_info=True)
+        logger.error(f"❌ Помилка встановлення webhook: {e}", exc_info=True)
         return f"❌ Помилка: {e}"
+
+@app.route('/remove_webhook')
+def remove_webhook_route():
+    """Видалення webhook (для тестування)"""
+    try:
+        if not bot_initialized:
+            return "Бот не ініціалізований"
+        
+        future = asyncio.run_coroutine_threadsafe(application.bot.delete_webhook(), event_loop)
+        future.result(timeout=30)
+        
+        return "✅ Webhook видалено! Бот працює в режимі polling."
+        
+    except Exception as e:
+        return f"❌ Помилка: {e}"
+
+@app.errorhandler(404)
+def not_found(error):
+    """Обробка 404 помилок"""
+    return """
+    <h1>🤖 Сторінку не знайдено</h1>
+    <p>Це Telegram бот - використовуйте <strong>/start</strong> в Telegram.</p>
+    <p>Доступні сторінки:</p>
+    <ul>
+        <li><a href="/">Головна</a></li>
+        <li><a href="/health">Health Check</a></li>
+        <li><a href="/status">Статус бота</a></li>
+        <li><a href="/debug">Дебаг інформація</a></li>
+        <li><a href="/set_webhook">Встановити Webhook</a></li>
+    </ul>
+    """, 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Обробка 500 помилок"""
+    return """
+    <h1>❌ Внутрішня помилка сервера</h1>
+    <p>Спробуйте оновити сторінку або поверніться пізніше.</p>
+    <p><a href="/">Головна</a> | <a href="/health">Health Check</a></p>
+    """, 500
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
@@ -1062,8 +1116,37 @@ def check_bot_initialization():
 init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
 init_check_thread.start()
 
+# ==================== SERVER STARTUP ====================
+
 if __name__ == '__main__':
     # Запуск сервера
     port = int(os.environ.get('PORT', 10000))
+    print("=" * 60)
     print(f"🌐 Запуск Flask сервера на порті {port}...")
+    print("=" * 60)
+    
+    # Автоматична ініціалізація бота при старті
+    logger.info("🚀 Автоматична ініціалізація бота при старті...")
+    init_bot()
+    
+    # Перевіряємо стан ініціалізації
+    def check_bot_initialization():
+        time.sleep(8)
+        if bot_initialized:
+            logger.info("🎉 Бот успішно ініціалізовано та готовий до роботи!")
+            print("🎉 Бот готовий до роботи!")
+        else:
+            logger.warning("⚠️ Бот ще не ініціалізовано, буде ініціалізовано при першому запиті")
+            print("⚠️ Бот ініціалізується...")
+    
+    init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
+    init_check_thread.start()
+    
+    print(f"🔗 Тестові URL:")
+    print(f"   • Головна: http://localhost:{port}/")
+    print(f"   • Health: http://localhost:{port}/health") 
+    print(f"   • Статус: http://localhost:{port}/status")
+    print(f"   • Дебаг: http://localhost:{port}/debug")
+    print("=" * 60)
+    
     app.run(host='0.0.0.0', port=port, debug=False)
