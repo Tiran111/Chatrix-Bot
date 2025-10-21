@@ -558,7 +558,12 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "➡️ Наступний у топі":
             from handlers.search import handle_top_navigation
             await handle_top_navigation(update, context)
-            return  
+            return 
+
+        elif text == "📈 Детальна статистика":
+            from handlers.admin import show_detailed_stats
+            await show_detailed_stats(update, context)
+            return     
 
         elif text == "🔙 Меню":
             await update.message.reply_text(
@@ -570,7 +575,37 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "🔍 Пошук користувача":
             from handlers.admin import start_user_search
             await start_user_search(update, context)
-            return    
+            return  
+
+        elif text == "📊 Статистика":
+            from handlers.admin import show_admin_panel
+            await show_admin_panel(update, context)
+            return
+
+        elif text == "👥 Користувачі":
+            from handlers.admin import show_users_management
+            await show_users_management(update, context)
+            return
+
+        elif text == "📢 Розсилка":
+            from handlers.admin import start_broadcast
+            await start_broadcast(update, context)
+            return
+
+        elif text == "🔄 Оновити базу":
+            from handlers.admin import update_database
+            await update_database(update, context)
+            return
+
+        elif text == "🚫 Блокування":
+            from handlers.admin import show_ban_management
+            await show_ban_management(update, context)
+            return
+
+        elif text == "🗑️ Скинути БД":
+            from handlers.admin import reset_database
+            await reset_database(update, context)
+            return      
 
         elif user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
