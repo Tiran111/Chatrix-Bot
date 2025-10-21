@@ -535,14 +535,19 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await contact_admin(update, context)
             return
 
-        elif text == "❤️ Лайк":
-            from handlers.search import handle_top_like
-            await handle_top_like(update, context)
-            return    
-        
         elif text == "👀 Хто переглядав":
             from handlers.search import show_profile_views
             await show_profile_views(update, context)
+            return
+
+        elif text == "❤️ Лайк":  # Для лайків з топу
+            from handlers.search import handle_top_like
+            await handle_top_like(update, context)
+            return
+
+        elif text == "❤️ Лайкнути":  # Для лайків з переглядів
+            from handlers.search import handle_like
+            await handle_like(update, context)
             return
 
         elif user.id == ADMIN_ID:

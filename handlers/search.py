@@ -862,3 +862,88 @@ async def show_profile_views(update: Update, context: CallbackContext):
             "❌ Помилка завантаження переглядів. Спробуйте ще раз.",
             reply_markup=get_main_menu(user.id)
         )                
+
+async def show_profile_views(update: Update, context: CallbackContext):
+    """Показати хто переглядав профіль"""
+    user = update.effective_user
+    
+    try:
+        user_data = db.get_user(user.id)
+        if user_data and user_data.get('is_banned'):
+            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+            return
+        
+        viewers = db.get_profile_views(user.id)
+        
+        if viewers:
+            await update.message.reply_text(f"👀 *Вас переглядали ({len(viewers)}):*", parse_mode='Markdown')
+            
+            for viewer in viewers[:5]:  # Показуємо перших 5
+                try:
+                    # Визначаємо ID переглядача
+                    if isinstance(viewer, dict):
+                        viewer_id = viewer.get('telegram_id')
+                    else:
+                        viewer_id = viewer[1] if len(viewer) > 1 else None
+                    
+                    if not viewer_id:
+                        continue
+                    
+                    # Форматуємо профіль
+                    profile_text = format_profile_text(viewer, "👀 Переглядав(ла) ваш профіль")
+                    main_photo = db.get_main_photo(viewer_id)
+                    
+                    # Отримуємо username
+                    viewed_user = db.get_user(viewer_id)
+                    username = viewed_user.get('username') if viewed_user else None
+                    
+                    if main_photo:
+                        caption = profile_text
+                        if username:
+                            caption += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_photo(
+                            photo=main_photo,
+                            caption=caption,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        text = profile_text
+                        if username:
+                            text += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_text(
+                            text,
+                            parse_mode='Markdown'
+                        )
+                    
+                    # Додаємо кнопку для лайку
+                    context.user_data['current_profile_for_like'] = viewer_id
+                    keyboard = [
+                        ['❤️ Лайкнути'],
+                        ['➡️ Наступний перегляд']
+                    ]
+                    await update.message.reply_text(
+                        "Бажаєте поставити лайк?",
+                        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                    )
+                    break  # Показуємо по одному
+                        
+                except Exception as e:
+                    logger.error(f"❌ Помилка обробки переглядача: {e}")
+                    continue
+                    
+        else:
+            await update.message.reply_text(
+                "😔 Вас ще ніхто не переглядав\n\n"
+                "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
+                reply_markup=get_main_menu(user.id),
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка показу переглядів: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Помилка завантаження переглядів. Спробуйте ще раз.",
+            reply_markup=get_main_menu(user.id)
+        )        
