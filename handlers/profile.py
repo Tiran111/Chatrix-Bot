@@ -398,3 +398,75 @@ async def show_my_profile(update: Update, context: CallbackContext):
             reply_markup=get_main_menu(user.id),
             parse_mode='Markdown'
         )
+
+async def start_edit_profile(update: Update, context: CallbackContext):
+    """Початок редагування профілю"""
+    user = update.effective_user
+    
+    user_data = db.get_user(user.id)
+    if not user_data or not user_data.get('age'):
+        await update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
+        return
+    
+    # Ініціалізуємо редагування
+    user_states[user.id] = States.PROFILE_AGE
+    user_profiles[user.id] = {
+        'age': user_data.get('age'),
+        'gender': user_data.get('gender'),
+        'city': user_data.get('city'),
+        'seeking_gender': user_data.get('seeking_gender', 'all'),
+        'goal': user_data.get('goal'),
+        'bio': user_data.get('bio')
+    }
+    
+    await update.message.reply_text(
+        "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
+        parse_mode='Markdown'
+    )
+
+async def update_profile_in_database(update: Update, context: CallbackContext):
+    """Оновлення профілю в базі даних після редагування"""
+    user = update.effective_user
+    
+    try:
+        if user.id not in user_profiles:
+            await update.message.reply_text("❌ Помилка: дані профілю не знайдені")
+            return
+        
+        profile_data = user_profiles[user.id]
+        
+        success = db.update_user_profile(
+            telegram_id=user.id,
+            age=profile_data['age'],
+            gender=profile_data['gender'],
+            city=profile_data['city'],
+            seeking_gender=profile_data.get('seeking_gender', 'all'),
+            goal=profile_data['goal'],
+            bio=profile_data['bio']
+        )
+        
+        if success:
+            # Очищаємо тимчасові дані
+            user_profiles.pop(user.id, None)
+            user_states[user.id] = States.START
+            
+            await update.message.reply_text(
+                "✅ Профіль успішно оновлено!",
+                reply_markup=get_main_menu(user.id)
+            )
+            
+            # Показуємо оновлений профіль
+            await show_my_profile(update, context)
+        else:
+            await update.message.reply_text(
+                "❌ Помилка оновлення профілю",
+                reply_markup=get_main_menu(user.id)
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка оновлення профілю: {e}")
+        await update.message.reply_text(
+            "❌ Помилка оновлення профілю",
+            reply_markup=get_main_menu(user.id)
+        )        

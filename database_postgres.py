@@ -203,27 +203,34 @@ class Database:
         try:
             logger.info(f"🔄 Оновлення профілю для {telegram_id}")
             logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
-            
+        
+            # Спочатку перевіряємо чи користувач існує
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+            user = self.cursor.fetchone()
+        
+            if not user:
+                logger.error(f"❌ Користувача {telegram_id} не знайдено")
+                return False
+        
+            # Оновлюємо профіль
             self.cursor.execute('''
                 UPDATE users 
-                SET age = %s, gender = %s, city = %s, seeking_gender = %s, goal = %s, bio = %s, last_active = CURRENT_TIMESTAMP
+                SET age = %s, gender = %s, city = %s, seeking_gender = %s, goal = %s, bio = %s, 
+                    last_active = CURRENT_TIMESTAMP, has_photo = TRUE
                 WHERE telegram_id = %s
             ''', (age, gender, city, seeking_gender, goal, bio, telegram_id))
-            
+        
             # Оновлюємо рейтинг
             self.update_user_rating(telegram_id)
-            
+        
             self.conn.commit()
-            
-            # Перевіряємо оновлені дані
-            self.cursor.execute('SELECT age, gender, city, seeking_gender, goal FROM users WHERE telegram_id = %s', (telegram_id,))
-            updated_data = self.cursor.fetchone()
-            logger.info(f"✅ Профіль оновлено для {telegram_id}. Перевірка: {updated_data}")
-            
+        
+            logger.info(f"✅ Профіль оновлено для {telegram_id}")
             return True
-                
+            
         except Exception as e:
             logger.error(f"❌ Помилка оновлення профілю: {e}")
+            self.conn.rollback()
             return False
 
     def update_user_rating(self, telegram_id):

@@ -42,7 +42,7 @@ async def show_admin_panel(update: Update, context: CallbackContext):
 
     await update.message.reply_text(stats_text, parse_mode='Markdown')
     
-    # Оновлена клавіатура з кнопкою скидання БД
+    # Оновлена клавіатура
     keyboard = [
         ['📊 Статистика', '👥 Користувачі'],
         ['📢 Розсилка', '🔄 Оновити базу'],
@@ -113,12 +113,10 @@ async def reset_database(update: Update, context: CallbackContext):
     try:
         await update.message.reply_text("🔄 Скидання бази даних... Це може зайняти кілька секунд.")
         
-        # Використовуємо метод з database_postgres.py
         success = db.reset_database()
         
         if success:
             await update.message.reply_text("✅ База даних скинута та перестворена!\n\n📝 Тепер потрібно заново заповнити профілі.")
-            # Показуємо оновлену статистику
             await show_admin_panel(update, context)
         else:
             await update.message.reply_text("❌ Помилка скидання БД")
@@ -163,7 +161,6 @@ async def show_users_list(update: Update, context: CallbackContext):
     users_text = "📋 *Список користувачів:*\n\n"
     for i, user_data in enumerate(users[:10], 1):
         try:
-            # Безпечне отримання даних користувача
             if isinstance(user_data, dict):
                 user_id = user_data.get('telegram_id', 'Невідомо')
                 user_name = user_data.get('first_name', 'Невідомо')
@@ -206,14 +203,12 @@ async def handle_user_search(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Пошук скасовано")
         return
     
-    # Виконуємо пошук
     results = db.search_user(search_query)
     
     if results:
         search_text = f"🔍 *Результати пошуку для '{search_query}':*\n\n"
         for i, user_data in enumerate(results[:5], 1):
             try:
-                # Безпечне отримання даних користувача
                 if isinstance(user_data, dict):
                     user_id = user_data.get('telegram_id', 'Невідомо')
                     user_name = user_data.get('first_name', 'Невідомо')
@@ -282,7 +277,6 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
     
     for user_data in users:
         try:
-            # Безпечне отримання ID користувача
             if isinstance(user_data, dict):
                 user_id = user_data.get('telegram_id')
             else:
@@ -292,36 +286,46 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
                 fail_count += 1
                 continue
             
-            # Використовуємо функцію сповіщення для розсилки
-            success = await notification_system.notify_broadcast_message(
-                context, 
-                user_id,
-                message_text
-            )
-            
-            if success:
+            # Відправляємо повідомлення з сповіщенням
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📢 *Повідомлення від адміністратора*\n\n{message_text}\n\n---\n💞 *Chatrix Bot* - знайомства та спілкування",
+                    parse_mode='Markdown'
+                )
                 success_count += 1
-            else:
+                
+                # Додаємо невелику затримку щоб не перевищити ліміти
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logger.error(f"❌ Помилка відправки для {user_id}: {e}")
                 fail_count += 1
                 
-            time.sleep(0.1)  # Затримка щоб не перевищити ліміти
         except Exception as e:
-            logger.error(f"❌ Помилка відправки для {user_id}: {e}")
+            logger.error(f"❌ Помилка обробки користувача {user_id}: {e}")
             fail_count += 1
     
     # Сповіщаємо адміна про результат
+    result_text = f"📊 *Результат розсилки:*\n\n✅ Відправлено: {success_count}\n❌ Не вдалося: {fail_count}"
+    
     await update.message.reply_text(
-        f"📊 *Результат розсилки:*\n\n"
-        f"✅ Відправлено: {success_count}\n"
-        f"❌ Не вдалося: {fail_count}",
+        result_text,
         parse_mode='Markdown',
-        reply_markup=get_main_menu(user.id)  # ДОДАЄМО КЛАВІАТУРУ
+        reply_markup=get_main_menu(user.id)
     )
     
     # Відправляємо сповіщення про успішну розсилку
-    await notification_system.notify_broadcast_complete(context, user.id, success_count, len(users))
+    try:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=f"📢 *Розсилка завершена*\n\n{result_text}",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"❌ Помилка відправки сповіщення про розсилку: {e}")
     
-    user_states[user.id] = States.START  # ОБОВ'ЯЗКОВО СКИДАЄМО СТАН
+    user_states[user.id] = States.START
 
 async def update_database(update: Update, context: CallbackContext):
     """Оновлення бази даних"""
@@ -372,7 +376,6 @@ async def show_banned_users(update: Update, context: CallbackContext):
     ban_text = "🚫 *Заблоковані користувачі:*\n\n"
     for i, user_data in enumerate(banned_users, 1):
         try:
-            # Безпечне отримання даних користувача
             if isinstance(user_data, dict):
                 user_id = user_data.get('telegram_id', 'Невідомо')
                 user_name = user_data.get('first_name', 'Невідомо')

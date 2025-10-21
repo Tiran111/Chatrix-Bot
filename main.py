@@ -8,6 +8,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import urllib.request
 import json
+from handlers.profile import start_edit_profile
 
 # Налаштування логування
 logging.basicConfig(
