@@ -49,3 +49,9 @@ KEEP_ALIVE_INTERVAL = 300  # 5 хвилин
 MAX_PROFILE_LENGTH = 500
 MAX_BIO_LENGTH = 1000
 SEARCH_LIMIT = 50
+
+# Автоматична ініціалізація при імпорті
+try:
+    initialize_config()
+except Exception as e:
+    print(f"⚠️ Помилка ініціалізації конфігурації: {e}")

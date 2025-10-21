@@ -9,6 +9,48 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 
+# Налаштування логування
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+app = Flask(__name__)
+
+# Імпорт модулів
+try:
+    from database_postgres import db
+    logger.info("✅ Використовується PostgreSQL база даних")
+except ImportError as e:
+    logger.error(f"❌ Помилка імпорту бази даних: {e}")
+    raise
+
+try:
+    from config import ADMIN_ID, initialize_config
+    initialize_config()
+    from config import TOKEN
+except ImportError as e:
+    logger.error(f"❌ Помилка імпорту конфігурації: {e}")
+    raise
+
+try:
+    from keyboards.main_menu import get_main_menu
+    from utils.states import user_states, States
+except ImportError as e:
+    logger.error(f"❌ Помилка імпорту утиліт: {e}")
+
+# Глобальні змінні
+WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
+PORT = int(os.environ.get('PORT', 10000))
+application = None
+event_loop = None
+bot_initialized = False
+bot_initialization_started = False
+
+# ... решта коду залишається без змін
+
 # ДЕТАЛЬНЕ ЛОГУВАННЯ БАЗИ ДАНИХ
 print("🔧 Перевірка бази даних...")
 try:
@@ -68,6 +110,21 @@ def keep_alive():
 # Запускаємо keep-alive в окремому потоці
 keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
 keep_alive_thread.start()
+
+def setup_basic_handlers(application):
+    """Налаштування базових обробників"""
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("profile", handle_basic_profile))
+    application.add_handler(CommandHandler("search", handle_basic_search))
+    application.add_handler(CommandHandler("debug", debug_bot))
+    
+    # Текстовий обробник
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+    
+    # Обробник помилок
+    application.add_handler(MessageHandler(filters.ALL, universal_handler))
+    
+    logger.info("✅ Базові обробники налаштовані")
 
 def validate_environment():
     """Перевірка змінних середовища"""
@@ -170,6 +227,40 @@ async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         await update.message.reply_text(f"❌ Критична помилка: {str(e)[:200]}")
+
+async def handle_basic_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Простий обробник профілю"""
+    user = update.effective_user
+    user_data = db.get_user(user.id)
+    
+    if user_data:
+        await update.message.reply_text(
+            f"👤 Ваш профіль:\n"
+            f"Ім'я: {user_data.get('first_name', 'Не вказано')}\n"
+            f"Вік: {user_data.get('age', 'Не вказано')}\n"
+            f"Місто: {user_data.get('city', 'Не вказано')}",
+            reply_markup=get_main_menu(user.id)
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Профіль не знайдено. Заповніть профіль спочатку.",
+            reply_markup=get_main_menu(user.id)
+        )
+
+async def handle_basic_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Простий пошук"""
+    user = update.effective_user
+    random_user = db.get_random_user(user.id)
+    
+    if random_user:
+        if isinstance(random_user, dict):
+            profile_text = f"👤 Знайдено:\nІм'я: {random_user.get('first_name')}\nВік: {random_user.get('age')}"
+        else:
+            profile_text = f"👤 Знайдено:\nІм'я: {random_user[3]}\nВік: {random_user[4]}"
+        
+        await update.message.reply_text(profile_text)
+    else:
+        await update.message.reply_text("😔 Немає анкет для перегляду")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник команди /start"""
@@ -576,15 +667,12 @@ async def initialize_bot_async():
     try:
         logger.info("🚀 Асинхронна ініціалізація бота...")
         
-        from config import initialize_config
-        initialize_config()
-        from config import TOKEN
-        
         application = Application.builder().token(TOKEN).build()
         logger.info("✅ Application створено")
         
-        setup_handlers(application)
-        logger.info("✅ Обробники налаштовано")
+        # Використовуємо спрощені обробники
+        setup_basic_handlers(application)
+        logger.info("✅ Базові обробники налаштовано")
         
         await application.initialize()
         logger.info("✅ Бот ініціалізовано")
@@ -999,6 +1087,25 @@ def check_bot_initialization():
 
 init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
 init_check_thread.start()
+
+@app.route('/test_db')
+def test_db():
+    """Тест бази даних"""
+    try:
+        users_count = db.get_users_count()
+        return f"✅ База даних працює. Користувачів: {users_count}"
+    except Exception as e:
+        return f"❌ Помилка БД: {str(e)}"
+
+@app.route('/test_bot')
+def test_bot():
+    """Тест стану бота"""
+    return {
+        'bot_initialized': bot_initialized,
+        'initialization_started': bot_initialization_started,
+        'application': application is not None,
+        'event_loop': event_loop is not None
+    }
 
 if __name__ == '__main__':
     # Запуск сервера

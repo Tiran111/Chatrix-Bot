@@ -872,6 +872,30 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
+    
+def reset_database(self):
+    """Скидання бази даних (для адміна)"""
+    try:
+        logger.info("🔄 Скидання бази даних...")
+        
+        # Видаляємо всі таблиці
+        self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
+        self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
+        self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
+        self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
+        self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
+        
+        self.conn.commit()
+        
+        # Перестворюємо таблиці
+        self.init_db()
+        
+        logger.info("✅ База даних скинута та перестворена")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Помилка скидання БД: {e}")
+        self.conn.rollback()
+        return False
 
     def update_all_ratings(self):
         """Оновити рейтинги всіх користувачів"""
