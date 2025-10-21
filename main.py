@@ -550,6 +550,16 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_like(update, context)
             return
 
+        elif text == "➡️ Наступний перегляд":
+            from handlers.search import show_next_profile_view
+            await show_next_profile_view(update, context)
+            return
+
+        elif text == "➡️ Наступний у топі":
+            from handlers.search import handle_top_navigation
+            await handle_top_navigation(update, context)
+            return    
+
         elif user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 await handle_admin_actions(update, context)
