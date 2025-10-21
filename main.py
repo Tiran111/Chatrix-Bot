@@ -558,7 +558,14 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "➡️ Наступний у топі":
             from handlers.search import handle_top_navigation
             await handle_top_navigation(update, context)
-            return    
+            return  
+
+        elif text == "🔙 Меню":
+            await update.message.reply_text(
+                "👋 Повертаємось до головного меню",
+                reply_markup=get_main_menu(user.id)
+            )
+            return
 
         elif user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
