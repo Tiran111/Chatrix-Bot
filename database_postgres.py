@@ -367,7 +367,6 @@ class Database:
             logger.error(f"❌ Помилка отримання профілю: {e}")
             return None, False
 
-        # У методі get_users_by_city замініть цей блок:
     def get_users_by_city(self, city, current_user_id):
         """Отримання користувачів за містом"""
         try:
@@ -609,14 +608,14 @@ class Database:
             return 0
 
     def get_all_users(self):
-    """Отримання всіх користувачів"""
-    try:
-        self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
-        users = self.cursor.fetchall()
-        return users
-    except Exception as e:
-        logger.error(f"❌ Помилка отримання користувачів: {e}")
-        return []
+        """Отримання всіх користувачів"""
+        try:
+            self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
+            users = self.cursor.fetchall()
+            return users
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання користувачів: {e}")
+            return []
 
     def get_banned_users(self):
         """Отримання заблокованих користувачів"""
@@ -872,30 +871,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
             return 5.0
-    
-def reset_database(self):
-    """Скидання бази даних (для адміна)"""
-    try:
-        logger.info("🔄 Скидання бази даних...")
-        
-        # Видаляємо всі таблиці
-        self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
-        self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
-        self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
-        self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
-        self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
-        
-        self.conn.commit()
-        
-        # Перестворюємо таблиці
-        self.init_db()
-        
-        logger.info("✅ База даних скинута та перестворена")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Помилка скидання БД: {e}")
-        self.conn.rollback()
-        return False
 
     def update_all_ratings(self):
         """Оновити рейтинги всіх користувачів"""
@@ -915,6 +890,30 @@ def reset_database(self):
             return True
         except Exception as e:
             logger.error(f"❌ Помилка оновлення рейтингів: {e}")
+            return False
+
+    def reset_database(self):
+        """Скидання бази даних (для адміна)"""
+        try:
+            logger.info("🔄 Скидання бази даних...")
+            
+            # Видаляємо всі таблиці
+            self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
+            self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
+            
+            self.conn.commit()
+            
+            # Перестворюємо таблиці
+            self.init_db()
+            
+            logger.info("✅ База даних скинута та перестворена")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання БД: {e}")
+            self.conn.rollback()
             return False
 
 # Глобальний екземпляр бази даних
