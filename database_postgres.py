@@ -609,14 +609,14 @@ class Database:
             return 0
 
     def get_all_users(self):
-        """Отримання всіх користувачів"""
-        try:
-            self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
-            users = self.cursor.fetchall()
-            return users
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання користувачів: {e}")
-            return []
+    """Отримання всіх користувачів"""
+    try:
+        self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
+        users = self.cursor.fetchall()
+        return users
+    except Exception as e:
+        logger.error(f"❌ Помилка отримання користувачів: {e}")
+        return []
 
     def get_banned_users(self):
         """Отримання заблокованих користувачів"""

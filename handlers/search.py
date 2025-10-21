@@ -281,7 +281,14 @@ async def show_next_profile(update: Update, context: CallbackContext):
                 context.user_data['current_index'] = current_index
                 user_data = search_users[current_index]
                 
-                db.add_profile_view(user.id, user_data[1])
+                # Безпечне отримання ID користувача
+                if isinstance(user_data, dict):
+                    user_id = user_data.get('telegram_id')
+                else:
+                    user_id = user_data[1] if len(user_data) > 1 else None
+                
+                if user_id:
+                    db.add_profile_view(user.id, user_id)
                 
                 await show_user_profile(update, context, user_data, "🏙️ Знайдені анкети")
             else:
@@ -290,7 +297,14 @@ async def show_next_profile(update: Update, context: CallbackContext):
             # Для випадкового пошуку - шукаємо нову анкету
             random_user = db.get_random_user(user.id)
             if random_user:
-                db.add_profile_view(user.id, random_user[1])
+                # Безпечне отримання ID користувача
+                if isinstance(random_user, dict):
+                    user_id = random_user.get('telegram_id')
+                else:
+                    user_id = random_user[1] if len(random_user) > 1 else None
+                
+                if user_id:
+                    db.add_profile_view(user.id, user_id)
                 
                 await show_user_profile(update, context, random_user, "💕 Знайдені анкети")
                 context.user_data['search_users'] = [random_user]

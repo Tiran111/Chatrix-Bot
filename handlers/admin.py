@@ -163,12 +163,22 @@ async def show_users_list(update: Update, context: CallbackContext):
     
     users_text = "📋 *Список користувачів:*\n\n"
     for i, user_data in enumerate(users[:10], 1):
-        user_name = user_data[3] if len(user_data) > 3 else "Невідомо"
-        user_id = user_data[1] if len(user_data) > 1 else "Невідомо"
-        is_banned = user_data[13] if len(user_data) > 13 else False
-        
-        status = "🚫" if is_banned else "✅"
-        users_text += f"{i}. {status} {user_name} (ID: `{user_id}`)\n"
+        try:
+            # Безпечне отримання даних користувача
+            if isinstance(user_data, dict):
+                user_id = user_data.get('telegram_id', 'Невідомо')
+                user_name = user_data.get('first_name', 'Невідомо')
+                is_banned = user_data.get('is_banned', False)
+            else:
+                user_id = user_data[1] if len(user_data) > 1 else 'Невідомо'
+                user_name = user_data[3] if len(user_data) > 3 else 'Невідомо'
+                is_banned = user_data[13] if len(user_data) > 13 else False
+            
+            status = "🚫" if is_banned else "✅"
+            users_text += f"{i}. {status} {user_name} (ID: `{user_id}`)\n"
+        except Exception as e:
+            logger.error(f"❌ Помилка обробки користувача #{i}: {e}")
+            continue
     
     if len(users) > 10:
         users_text += f"\n... та ще {len(users) - 10} користувачів"
@@ -246,13 +256,13 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
     
     if message_text == "🔙 Скасувати":
         user_states[user.id] = States.START
-        await update.message.reply_text("❌ Розсилка скасована")
+        await update.message.reply_text("❌ Розсилка скасована", reply_markup=get_main_menu(user.id))
         return
     
     users = db.get_all_users()
     
     if not users:
-        await update.message.reply_text("❌ Немає користувачів для розсилки")
+        await update.message.reply_text("❌ Немає користувачів для розсилки", reply_markup=get_main_menu(user.id))
         user_states[user.id] = States.START
         return
     
@@ -263,10 +273,20 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
     
     for user_data in users:
         try:
+            # Безпечне отримання ID користувача
+            if isinstance(user_data, dict):
+                user_id = user_data.get('telegram_id')
+            else:
+                user_id = user_data[1] if len(user_data) > 1 else None
+            
+            if not user_id:
+                fail_count += 1
+                continue
+            
             # Використовуємо функцію сповіщення для розсилки
             success = await notification_system.notify_broadcast_message(
                 context, 
-                user_data[1],  # telegram_id
+                user_id,
                 message_text
             )
             
@@ -277,7 +297,7 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
                 
             time.sleep(0.1)  # Затримка щоб не перевищити ліміти
         except Exception as e:
-            logger.error(f"❌ Помилка відправки для {user_data[1]}: {e}")
+            logger.error(f"❌ Помилка відправки для {user_id}: {e}")
             fail_count += 1
     
     # Сповіщаємо адміна про результат
@@ -285,13 +305,14 @@ async def handle_broadcast_message(update: Update, context: CallbackContext):
         f"📊 *Результат розсилки:*\n\n"
         f"✅ Відправлено: {success_count}\n"
         f"❌ Не вдалося: {fail_count}",
-        parse_mode='Markdown'
+        parse_mode='Markdown',
+        reply_markup=get_main_menu(user.id)  # ДОДАЄМО КЛАВІАТУРУ
     )
     
     # Відправляємо сповіщення про успішну розсилку
     await notification_system.notify_broadcast_complete(context, user.id, success_count, len(users))
     
-    user_states[user.id] = States.START
+    user_states[user.id] = States.START  # ОБОВ'ЯЗКОВО СКИДАЄМО СТАН
 
 async def update_database(update: Update, context: CallbackContext):
     """Оновлення бази даних"""
