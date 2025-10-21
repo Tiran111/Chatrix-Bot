@@ -396,12 +396,19 @@ async def show_detailed_stats(update: Update, context: CallbackContext):
     if user.id != ADMIN_ID:
         return
     
-    stats = db.get_statistics()
-    male, female, total_active, goals_stats = stats
-    total_users = db.get_users_count()
-    banned_users = len(db.get_banned_users())
-    
-    stats_text = f"""📈 *Детальна статистика*
+    try:
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
+        total_users = db.get_users_count()
+        banned_users = len(db.get_banned_users())
+        
+        # Переконуємося, що значення числові
+        male = int(male) if male else 0
+        female = int(female) if female else 0
+        total_active = int(total_active) if total_active else 0
+        total_users = int(total_users) if total_users else 0
+        
+        stats_text = f"""📈 *Детальна статистика*
 
 👥 *Користувачі:*
 • Загалом: {total_users}
@@ -410,27 +417,49 @@ async def show_detailed_stats(update: Update, context: CallbackContext):
 • Чоловіків: {male}
 • Жінок: {female}"""
 
-    if goals_stats:
-        stats_text += "\n\n🎯 *Цілі знайомств:*"
-        for goal, count in goals_stats:
-            percentage = (count/total_active*100) if total_active > 0 else 0
-            stats_text += f"\n• {goal}: {count} ({percentage:.1f}%)"
-    
-    # Додаткова статистика по активності
-    try:
-        db.cursor.execute('SELECT COUNT(*) FROM likes WHERE DATE(created_at) = CURRENT_DATE')
-        daily_likes = db.cursor.fetchone()['count']
+        if goals_stats:
+            stats_text += "\n\n🎯 *Цілі знайомств:*"
+            for goal_count in goals_stats:
+                try:
+                    if isinstance(goal_count, (list, tuple)) and len(goal_count) >= 2:
+                        goal = goal_count[0]
+                        count = goal_count[1]
+                        count = int(count) if count else 0
+                        percentage = (count/total_active*100) if total_active > 0 else 0
+                        stats_text += f"\n• {goal}: {count} ({percentage:.1f}%)"
+                    else:
+                        # Якщо структура даних інша
+                        goal = str(goal_count)
+                        stats_text += f"\n• {goal}"
+                except Exception as e:
+                    logger.error(f"❌ Помилка обробки цілі знайомства: {e}")
+                    continue
         
-        db.cursor.execute('SELECT COUNT(*) FROM matches WHERE DATE(created_at) = CURRENT_DATE')
-        daily_matches = db.cursor.fetchone()['count']
+        # Додаткова статистика по активності
+        try:
+            db.cursor.execute('SELECT COUNT(*) FROM likes WHERE DATE(created_at) = CURRENT_DATE')
+            daily_likes_result = db.cursor.fetchone()
+            daily_likes = int(daily_likes_result['count']) if daily_likes_result and daily_likes_result['count'] else 0
+            
+            db.cursor.execute('SELECT COUNT(*) FROM matches WHERE DATE(created_at) = CURRENT_DATE')
+            daily_matches_result = db.cursor.fetchone()
+            daily_matches = int(daily_matches_result['count']) if daily_matches_result and daily_matches_result['count'] else 0
+            
+            stats_text += f"\n\n📊 *Сьогоднішня активність:*"
+            stats_text += f"\n• Лайків: {daily_likes}"
+            stats_text += f"\n• Матчів: {daily_matches}"
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання щоденної статистики: {e}")
+            stats_text += f"\n\n📊 *Сьогоднішня активність:*\n• Дані тимчасово недоступні"
         
-        stats_text += f"\n\n📊 *Сьогоднішня активність:*"
-        stats_text += f"\n• Лайків: {daily_likes}"
-        stats_text += f"\n• Матчів: {daily_matches}"
+        await update.message.reply_text(stats_text, parse_mode='Markdown')
+        
     except Exception as e:
-        logger.error(f"❌ Помилка отримання щоденної статистики: {e}")
-    
-    await update.message.reply_text(stats_text, parse_mode='Markdown')
+        logger.error(f"❌ Помилка показу детальної статистики: {e}")
+        await update.message.reply_text(
+            "❌ Помилка завантаження статистики. Спробуйте ще раз.",
+            parse_mode='Markdown'
+        )
 
 async def start_ban_user(update: Update, context: CallbackContext):
     """Початок блокування користувача"""
