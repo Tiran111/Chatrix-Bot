@@ -599,7 +599,7 @@ async def handle_top_selection(update: Update, context: CallbackContext):
         if top_users:
             await update.message.reply_text(f"**{title}** 🏆\n\n*Знайдено анкет: {len(top_users)}*", parse_mode='Markdown')
             
-            for i, user_data in enumerate(top_users, 1):
+            for i, user_data in enumerate(top_users[:5], 1):  # Показуємо перших 5
                 try:
                     # Визначаємо дані користувача
                     if isinstance(user_data, dict):
@@ -642,6 +642,7 @@ async def handle_top_selection(update: Update, context: CallbackContext):
                     
                     # Зберігаємо поточний профіль для лайку
                     context.user_data['current_profile_for_like'] = user_id
+                    context.user_data['current_top_user'] = user_data
                     
                     if main_photo:
                         await update.message.reply_photo(
@@ -662,7 +663,7 @@ async def handle_top_selection(update: Update, context: CallbackContext):
                         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
                     )
                     
-                    # Чекаємо дії користувача перед наступним профілем
+                    # Зупиняємося на цьому профілі
                     context.user_data['current_top_index'] = i
                     context.user_data['top_users'] = top_users
                     break  # Показуємо по одному
@@ -716,3 +717,148 @@ async def handle_top_navigation(update: Update, context: CallbackContext):
             
         else:
             await update.message.reply_text("✅ Це останній користувач у топі")
+
+async def handle_top_like(update: Update, context: CallbackContext):
+    """Обробка лайку з топу"""
+    try:
+        user = update.effective_user
+        
+        user_data = db.get_user(user.id)
+        if user_data and user_data.get('is_banned'):
+            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+            return
+        
+        # Отримуємо ID користувача з контексту
+        target_user_id = context.user_data.get('current_profile_for_like')
+        
+        if not target_user_id:
+            await update.message.reply_text("❌ Не знайдено профіль для лайку")
+            return
+        
+        logger.info(f"🔍 [TOP LIKE] Користувач {user.id} лайкає з топу {target_user_id}")
+        
+        # Додаємо лайк з перевіркою обмежень
+        success, message = db.add_like(user.id, target_user_id)
+        
+        if success:
+            # Перевіряємо чи це взаємний лайк (матч)
+            is_mutual = db.has_liked(target_user_id, user.id)
+            
+            if is_mutual:
+                # Отримуємо дані користувача для кнопки переходу в Telegram
+                matched_user = db.get_user(target_user_id)
+                if matched_user:
+                    username = matched_user.get('username')
+                    if username:
+                        await update.message.reply_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            f"💬 *Тепер ви можете почати спілкування з {matched_user['first_name']}!*\n"
+                            f"Username: @{username}",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text(
+                            "💕 У вас матч! Ви вподобали один одного!\n\n"
+                            f"ℹ️ *У {matched_user['first_name']} немає username*",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await update.message.reply_text("💕 У вас матч! Ви вподобали один одного!")
+                
+                # Відправляємо сповіщення про матч
+                await notification_system.notify_new_match(context, user.id, target_user_id)
+            else:
+                # Відправляємо сповіщення про лайк
+                await notification_system.notify_new_like(context, user.id, target_user_id)
+                await update.message.reply_text(f"❤️ {message}")
+        else:
+            await update.message.reply_text(f"❌ {message}")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки лайку з топу: {e}", exc_info=True)
+        await update.message.reply_text("❌ Сталася помилка при обробці лайку.")    
+
+async def show_profile_views(update: Update, context: CallbackContext):
+    """Показати хто переглядав профіль"""
+    user = update.effective_user
+    
+    try:
+        user_data = db.get_user(user.id)
+        if user_data and user_data.get('is_banned'):
+            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
+            return
+        
+        viewers = db.get_profile_views(user.id)
+        
+        if viewers:
+            await update.message.reply_text(f"👀 *Вас переглядали ({len(viewers)}):*", parse_mode='Markdown')
+            
+            for viewer in viewers[:10]:  # Показуємо перших 10
+                try:
+                    # Визначаємо ID переглядача
+                    if isinstance(viewer, dict):
+                        viewer_id = viewer.get('telegram_id')
+                    else:
+                        viewer_id = viewer[1] if len(viewer) > 1 else None
+                    
+                    if not viewer_id:
+                        continue
+                    
+                    # Форматуємо профіль
+                    profile_text = format_profile_text(viewer, "👀 Переглядав(ла) ваш профіль")
+                    main_photo = db.get_main_photo(viewer_id)
+                    
+                    # Отримуємо username
+                    viewed_user = db.get_user(viewer_id)
+                    username = viewed_user.get('username') if viewed_user else None
+                    
+                    if main_photo:
+                        caption = profile_text
+                        if username:
+                            caption += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_photo(
+                            photo=main_photo,
+                            caption=caption,
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        text = profile_text
+                        if username:
+                            text += f"\n\n💬 Username: @{username}"
+                        
+                        await update.message.reply_text(
+                            text,
+                            parse_mode='Markdown'
+                        )
+                    
+                    # Додаємо кнопку для лайку
+                    context.user_data['current_profile_for_like'] = viewer_id
+                    keyboard = [
+                        ['❤️ Лайкнути'],
+                        ['➡️ Наступний перегляд']
+                    ]
+                    await update.message.reply_text(
+                        "Бажаєте поставити лайк?",
+                        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                    )
+                    break  # Показуємо по одному
+                        
+                except Exception as e:
+                    logger.error(f"❌ Помилка обробки переглядача: {e}")
+                    continue
+                    
+        else:
+            await update.message.reply_text(
+                "😔 Вас ще ніхто не переглядав\n\n"
+                "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
+                reply_markup=get_main_menu(user.id),
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка показу переглядів: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Помилка завантаження переглядів. Спробуйте ще раз.",
+            reply_markup=get_main_menu(user.id)
+        )                

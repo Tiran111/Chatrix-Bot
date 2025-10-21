@@ -534,7 +534,17 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "👨‍💼 Зв'язок з адміном":
             await contact_admin(update, context)
             return
+
+        elif text == "❤️ Лайк":
+            from handlers.search import handle_top_like
+            await handle_top_like(update, context)
+            return    
         
+        elif text == "👀 Хто переглядав":
+            from handlers.search import show_profile_views
+            await show_profile_views(update, context)
+            return
+
         elif user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 await handle_admin_actions(update, context)

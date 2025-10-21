@@ -923,5 +923,22 @@ class Database:
             self.conn.rollback()
             return False
 
+    def get_profile_views(self, telegram_id):
+    """Отримати список користувачів, які переглядали профіль"""
+    try:
+        self.cursor.execute('''
+            SELECT u.* FROM users u
+            JOIN profile_views pv ON u.id = pv.viewer_id
+            JOIN users target ON target.id = pv.viewed_user_id
+            WHERE target.telegram_id = %s AND u.telegram_id != %s
+            ORDER BY pv.viewed_at DESC
+        ''', (telegram_id, telegram_id))
+        
+        viewers = self.cursor.fetchall()
+        return viewers
+    except Exception as e:
+        logger.error(f"❌ Помилка отримання переглядів: {e}")
+        return []        
+
 # Глобальний екземпляр бази даних
 db = Database()
