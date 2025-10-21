@@ -170,21 +170,30 @@ class Database:
             logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
 
     def add_user(self, telegram_id, username, first_name):
-        """Додавання нового користувача"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO users (telegram_id, username, first_name)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (telegram_id) DO UPDATE SET
-                username = EXCLUDED.username,
-                first_name = EXCLUDED.first_name
-            ''', (telegram_id, username, first_name))
-            self.conn.commit()
-            logger.info(f"✅ Користувач доданий/оновлений: {telegram_id} - {first_name}")
+    """Додавання нового користувача"""
+    try:
+        # Перевіряємо чи існує користувач
+        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+        existing_user = self.cursor.fetchone()
+        
+        if existing_user:
+            logger.info(f"ℹ️ Користувач {telegram_id} вже існує")
             return True
-        except Exception as e:
-            logger.error(f"❌ Помилка додавання користувача: {e}")
-            return False
+        
+        # Додаємо нового користувача
+        self.cursor.execute('''
+            INSERT INTO users (telegram_id, username, first_name, created_at, last_active, rating)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (telegram_id, username, first_name, datetime.now(), datetime.now(), 5.0))
+        
+        self.conn.commit()
+        logger.info(f"✅ Користувач {telegram_id} успішно доданий")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
+        self.conn.rollback()
+        return False
 
     def get_user(self, telegram_id):
         """Отримання користувача за telegram_id"""
@@ -198,40 +207,74 @@ class Database:
             logger.error(f"❌ Помилка отримання користувача: {e}")
             return None
 
-    def update_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Оновлення профілю користувача"""
-        try:
-            logger.info(f"🔄 Оновлення профілю для {telegram_id}")
-            logger.info(f"🔄 Дані для оновлення: вік={age}, стать={gender}, місто={city}, шукає={seeking_gender}, ціль={goal}")
+  def update_user_profile(self, telegram_id, age=None, gender=None, city=None, 
+                      seeking_gender=None, goal=None, bio=None):
+    """Оновлення профілю користувача"""
+    try:
+        # Спочатку перевіряємо чи існує користувач
+        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+        user = self.cursor.fetchone()
         
-            # Спочатку перевіряємо чи користувач існує
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-        
-            if not user:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено")
+        if not user:
+            logger.error(f"❌ Користувача {telegram_id} не знайдено для оновлення")
+            # Спробуємо створити користувача
+            from main import application
+            if application and application.bot:
+                try:
+                    chat = await application.bot.get_chat(telegram_id)
+                    self.add_user(telegram_id, chat.username, chat.first_name)
+                    logger.info(f"✅ Автоматично створено користувача {telegram_id}")
+                except Exception as e:
+                    logger.error(f"❌ Не вдалося створити користувача {telegram_id}: {e}")
+                    return False
+            else:
                 return False
         
-            # Оновлюємо профіль
-            self.cursor.execute('''
-                UPDATE users 
-                SET age = %s, gender = %s, city = %s, seeking_gender = %s, goal = %s, bio = %s, 
-                    last_active = CURRENT_TIMESTAMP, has_photo = TRUE
-                WHERE telegram_id = %s
-            ''', (age, gender, city, seeking_gender, goal, bio, telegram_id))
+        # Оновлюємо профіль
+        update_fields = []
+        values = []
         
-            # Оновлюємо рейтинг
-            self.update_user_rating(telegram_id)
+        if age is not None:
+            update_fields.append("age = %s")
+            values.append(age)
+        if gender is not None:
+            update_fields.append("gender = %s")
+            values.append(gender)
+        if city is not None:
+            update_fields.append("city = %s")
+            values.append(city)
+        if seeking_gender is not None:
+            update_fields.append("seeking_gender = %s")
+            values.append(seeking_gender)
+        if goal is not None:
+            update_fields.append("goal = %s")
+            values.append(goal)
+        if bio is not None:
+            update_fields.append("bio = %s")
+            values.append(bio)
         
+        # Додаємо оновлення часу останньої активності
+        update_fields.append("last_active = %s")
+        values.append(datetime.now())
+        
+        # Додаємо telegram_id в кінець для WHERE умови
+        values.append(telegram_id)
+        
+        if update_fields:
+            query = f"UPDATE users SET {', '.join(update_fields)} WHERE telegram_id = %s"
+            self.cursor.execute(query, values)
             self.conn.commit()
-        
-            logger.info(f"✅ Профіль оновлено для {telegram_id}")
+            
+            logger.info(f"✅ Профіль користувача {telegram_id} оновлено")
+            return True
+        else:
+            logger.warning(f"⚠️ Немає полів для оновлення для користувача {telegram_id}")
             return True
             
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення профілю: {e}")
-            self.conn.rollback()
-            return False
+    except Exception as e:
+        logger.error(f"❌ Помилка оновлення профілю {telegram_id}: {e}")
+        self.conn.rollback()
+        return False
 
     def update_user_rating(self, telegram_id):
         """Оновлення рейтингу користувача"""
