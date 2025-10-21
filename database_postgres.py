@@ -376,12 +376,19 @@ class Database:
                 return []
         
             seeking_gender = current_user.get('seeking_gender', 'all')
-            clean_city = city.replace('🏙️ ', '').strip()
+        
+            # Очищаємо назву міста від емодзі та зайвих пробілів
+            clean_city = city.replace('🏙️', '').strip()
+        
+            logger.info(f"🔍 [CITY SEARCH] Шукаємо в місті: '{clean_city}', шукає стать: {seeking_gender}")
         
             query = '''
                 SELECT u.* FROM users u
-                WHERE u.telegram_id != %s AND u.city LIKE %s 
-                AND u.age IS NOT NULL AND u.has_photo = TRUE AND u.is_banned = FALSE
+                WHERE u.telegram_id != %s 
+                AND LOWER(u.city) LIKE LOWER(%s)
+                AND u.age IS NOT NULL 
+                AND u.has_photo = TRUE 
+                AND u.is_banned = FALSE
             '''
             params = [current_user_id, f'%{clean_city}%']
         
@@ -390,13 +397,17 @@ class Database:
                 params.append(seeking_gender)
         
             # Виключаємо вже лайкнутих користувачів
-            query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
-            params.append(current_user_id)
+            admin_id_str = os.environ.get('ADMIN_ID', '0')
+            if str(current_user_id) != admin_id_str:
+                query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
+                params.append(current_user_id)
         
             query += ' ORDER BY RANDOM() LIMIT 20'
         
             self.cursor.execute(query, params)
             users = self.cursor.fetchall()
+        
+            logger.info(f"🔍 [CITY SEARCH] Знайдено користувачів: {len(users)}")
         
             return users
         except Exception as e:
