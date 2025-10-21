@@ -24,16 +24,6 @@ def get_bot_token():
         raise ValueError("❌ BOT_TOKEN не встановлено або використовується тестовий токен")
     return token
 
-def get_admin_id():
-    """Безпечне отримання ADMIN_ID"""
-    try:
-        admin_id = int(os.environ.get('ADMIN_ID', 0))
-        if admin_id == 0:
-            raise ValueError("❌ ADMIN_ID не встановлено в змінних середовища")
-        return admin_id
-    except ValueError:
-        raise ValueError("❌ ADMIN_ID має бути числовим значенням")
-
 # Глобальні змінні будуть встановлені пізніше
 TOKEN = None
 ADMIN_ID = None
