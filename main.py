@@ -1027,10 +1027,10 @@ def remove_webhook_route():
     except Exception as e:
         return f"❌ Помилка: {e}"
 
-  @app.route('/test')
+@app.route('/test')
 def test():
-    """Простий тестовий маршрут - ШВИДКО"""
-    return "✅ Test successful! Server is responding.", 200      
+    """Тестовий маршрут"""
+    return "✅ Test successful!", 200      
 
 @app.errorhandler(404)
 def not_found(error):
