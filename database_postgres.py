@@ -653,35 +653,29 @@ class Database:
             logger.error(f"❌ Помилка отримання активних користувачів: {e}")
             return []
 
-    def search_users_advanced(self, user_id, gender, city, goal):
-        """Розширений пошук користувачів"""
+    def search_user(self, query):
+    """Пошук користувача за ID або іменем"""
+    try:
         try:
-            query = '''
-                SELECT * FROM users 
-                WHERE telegram_id != %s AND age IS NOT NULL 
-                AND has_photo = TRUE AND is_banned = FALSE
-            '''
-            params = [user_id]
-            
-            if gender != 'all':
-                query += ' AND gender = %s'
-                params.append(gender)
-            
-            if city:
-                query += ' AND city LIKE %s'
-                params.append(f'%{city}%')
-            
-            if goal:
-                query += ' AND goal = %s'
-                params.append(goal)
-            
-            query += ' ORDER BY RANDOM() LIMIT 20'
-            
-            self.cursor.execute(query, params)
-            return self.cursor.fetchall()
-        except Exception as e:
-            logger.error(f"❌ Помилка розширеного пошуку: {e}")
-            return []
+            user_id = int(query)
+            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (user_id,))
+            result_by_id = self.cursor.fetchall()
+            if result_by_id:
+                return result_by_id
+        except ValueError:
+            pass
+        
+        self.cursor.execute('''
+            SELECT * FROM users 
+            WHERE first_name ILIKE %s OR username ILIKE %s
+            ORDER BY created_at DESC
+        ''', (f'%{query}%', f'%{query}%'))
+        
+        results = self.cursor.fetchall()
+        return results
+    except Exception as e:
+        logger.error(f"❌ Помилка пошуку користувача: {e}")
+        return []
 
     def cleanup_old_data(self):
         """Очищення старих даних"""
@@ -749,30 +743,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка розблокування всіх користувачів: {e}")
             return False
-
-    def search_user(self, query):
-        """Пошук користувача за ID або іменем"""
-        try:
-            try:
-                user_id = int(query)
-                self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (user_id,))
-                result_by_id = self.cursor.fetchall()
-                if result_by_id:
-                    return result_by_id
-            except ValueError:
-                pass
-            
-            self.cursor.execute('''
-                SELECT * FROM users 
-                WHERE first_name ILIKE %s OR username ILIKE %s
-                ORDER BY created_at DESC
-            ''', (f'%{query}%', f'%{query}%'))
-            
-            results = self.cursor.fetchall()
-            return results
-        except Exception as e:
-            logger.error(f"❌ Помилка пошуку користувача: {e}")
-            return []
 
     def get_user_by_id(self, telegram_id):
         """Отримати користувача за telegram_id"""

@@ -567,6 +567,11 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        elif text == "🔍 Пошук користувача":
+            from handlers.admin import start_user_search
+            await start_user_search(update, context)
+            return    
+
         elif user.id == ADMIN_ID:
             if text in ["👑 Адмін панель", "📊 Статистика", "👥 Користувачі", "📢 Розсилка", "🔄 Оновити базу", "🚫 Блокування"]:
                 await handle_admin_actions(update, context)
