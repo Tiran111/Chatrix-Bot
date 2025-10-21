@@ -1,18 +1,16 @@
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import CallbackContext
-from keyboards.main_menu import get_main_menu
-from utils.states import user_states, States, user_profiles
-from config import ADMIN_ID
 import logging
-
-logger = logging.getLogger(__name__)
-
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import ContextTypes
 try:
     from database_postgres import db
 except ImportError:
     from database.models import db
+from utils.states import user_states, States, user_profiles
+from keyboards.main_menu import get_main_menu
 
-async def start_profile_creation(update: Update, context: CallbackContext):
+logger = logging.getLogger(__name__)
+
+async def start_profile_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Початок створення профілю"""
     user = update.effective_user
     
@@ -26,9 +24,6 @@ async def start_profile_creation(update: Update, context: CallbackContext):
     user_states[user.id] = States.PROFILE_AGE
     user_profiles[user.id] = {}
     
-    # Очищаємо попередні дані
-    context.user_data.pop('profile_data', None)
-    
     logger.info(f"🔧 [PROFILE START] Користувач {user.id} почав створення профілю")
     
     await update.message.reply_text(
@@ -37,93 +32,19 @@ async def start_profile_creation(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-async def handle_main_photo(update: Update, context: CallbackContext):
-    """Обробка додавання фото"""
-    user = update.effective_user
-    
-    # ФІКС: Перевіряємо чи користувач є в базі
-    user_data = db.get_user(user.id)
-    if not user_data:
-        # Створюємо користувача, якщо його немає
-        logger.info(f"👤 Користувача {user.id} не знайдено, створюємо...")
-        success = db.add_user(user.id, user.username, user.first_name)
-        if success:
-            logger.info(f"✅ Користувача {user.id} успішно створено")
-        else:
-            logger.error(f"❌ Не вдалося створити користувача {user.id}")
-            await update.message.reply_text("❌ Помилка створення профілю")
-            return
-    
-    if user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.photo:
-        photo = update.message.photo[-1]
-        
-        logger.info(f"🔧 [PHOTO] Користувач {user.id} додає фото")
-        
-        # Додаємо фото
-        success = db.add_profile_photo(user.id, photo.file_id)
-        
-        if success:
-            photos = db.get_profile_photos(user.id)
-            if len(photos) < 3:
-                await update.message.reply_text(
-                    f"✅ Фото додано! У вас {len(photos)}/3 фото\nНадішліть ще фото або натисніть '🔙 Завершити'",
-                    reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
-                )
-            else:
-                # ФІКС: Оновлюємо стан та показуємо головне меню
-                user_states[user.id] = States.START
-                user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
-                
-                # Оновлюємо профіль користувача в базі даних
-                db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
-                db.conn.commit()
-                
-                await update.message.reply_text(
-                    "✅ Ви додали максимальну кількість фото (3 фото)\n🎉 Профіль готовий!",
-                    reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
-                )
-        else:
-            await update.message.reply_text("❌ Помилка додавання фото")
-    
-    elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
-        # ФІКС: Тут теж додаємо головне меню
-        user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
-        photos_count = len(db.get_profile_photos(user.id))
-        
-        # Оновлюємо профіль користувача в базі даних
-        if photos_count > 0:
-            db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
-            db.conn.commit()
-        
-        await update.message.reply_text(
-            f"🎉 Профіль створено! Додано {photos_count} фото",
-            reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
-        )
-    
-    elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:
-        await update.message.reply_text("📷 Будь ласка, надішліть фото:")
-
-async def handle_profile_message(update: Update, context: CallbackContext):
+async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка повідомлень під час створення/редагування профілю"""
-    try:
-        user = update.effective_user
-        text = update.message.text
-        state = user_states.get(user.id)
+    user = update.effective_user
+    text = update.message.text
+    state = user_states.get(user.id)
 
-        logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
+    logger.info(f"🔧 [PROFILE] {user.first_name}: '{text}', стан: {state}")
 
-        # ШВИДКА перевірка скасування
-    try:
-        user = update.effective_user
-        text = update.message.text
-        state = user_states.get(user.id)
-    
-        if text == "🔙 Скасувати":
-            user_states[user.id] = States.START
-            user_profiles.pop(user.id, None)
-            await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
-            return
+    if text == "🔙 Скасувати":
+        user_states[user.id] = States.START
+        user_profiles.pop(user.id, None)
+        await update.message.reply_text("❌ Скасовано", reply_markup=get_main_menu(user.id))
+        return
 
     # Перевіряємо чи існує профіль для користувача
     if user.id not in user_profiles:
@@ -302,11 +223,11 @@ async def handle_profile_message(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
 
-async def handle_main_photo(update: Update, context: CallbackContext):
+async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка додавання фото"""
     user = update.effective_user
     
-    # ФІКС: Перевіряємо чи користувач є в базі
+    # Перевіряємо чи користувач є в базі
     user_data = db.get_user(user.id)
     if not user_data:
         # Створюємо користувача, якщо його немає
@@ -335,9 +256,9 @@ async def handle_main_photo(update: Update, context: CallbackContext):
                     reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
                 )
             else:
-                # ФІКС: Оновлюємо стан та показуємо головне меню
+                # Оновлюємо стан та показуємо головне меню
                 user_states[user.id] = States.START
-                user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
+                user_profiles.pop(user.id, None)
                 
                 # Оновлюємо профіль користувача в базі даних
                 db.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (user.id,))
@@ -345,15 +266,15 @@ async def handle_main_photo(update: Update, context: CallbackContext):
                 
                 await update.message.reply_text(
                     "✅ Ви додали максимальну кількість фото (3 фото)\n🎉 Профіль готовий!",
-                    reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
+                    reply_markup=get_main_menu(user.id)
                 )
         else:
             await update.message.reply_text("❌ Помилка додавання фото")
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
-        # ФІКС: Тут теж додаємо головне меню
+        # Оновлюємо стан та показуємо головне меню
         user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)  # Очищаємо тимчасові дані
+        user_profiles.pop(user.id, None)
         photos_count = len(db.get_profile_photos(user.id))
         
         # Оновлюємо профіль користувача в базі даних
@@ -363,13 +284,13 @@ async def handle_main_photo(update: Update, context: CallbackContext):
         
         await update.message.reply_text(
             f"🎉 Профіль створено! Додано {photos_count} фото",
-            reply_markup=get_main_menu(user.id)  # ← ДОДАЄМО ГОЛОВНЕ МЕНЮ
+            reply_markup=get_main_menu(user.id)
         )
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:
         await update.message.reply_text("📷 Будь ласка, надішліть фото:")
 
-async def show_my_profile(update: Update, context: CallbackContext):
+async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати профіль користувача"""
     user = update.effective_user
     user_data = db.get_user(user.id)
@@ -429,273 +350,34 @@ async def show_my_profile(update: Update, context: CallbackContext):
             parse_mode='Markdown'
         )
 
-async def start_edit_profile(update: Update, context: CallbackContext):
+async def start_edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Початок редагування профілю"""
-    try:
-        user = update.effective_user
-        
-        user_data = db.get_user(user.id)
-        if not user_data or not user_data.get('age'):
-            await update.message.reply_text(
-                "❌ У вас ще немає профілю. Спочатку заповніть його!",
-                reply_markup=get_main_menu(user.id)
-            )
-            return
-        
-        # Ініціалізуємо редагування - завантажуємо поточні дані
-        user_states[user.id] = States.PROFILE_AGE
-        user_profiles[user.id] = {
-            'age': user_data.get('age'),
-            'gender': user_data.get('gender'),
-            'city': user_data.get('city'),
-            'seeking_gender': user_data.get('seeking_gender', 'all'),
-            'goal': user_data.get('goal'),
-            'bio': user_data.get('bio')
-        }
-        
-        logger.info(f"🔧 [EDIT PROFILE] Початок редагування для {user.id}")
-        
-        await update.message.reply_text(
-            "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка в start_edit_profile: {e}")
-        await update.message.reply_text("❌ Помилка запуску редагування профілю.")
+    user = update.effective_user
     
-    try:
-        if user.id not in user_profiles:
-            await update.message.reply_text("❌ Помилка: дані профілю не знайдені")
-            return
-        
-        profile_data = user_profiles[user.id]
-        
-        success = db.update_user_profile(
-            telegram_id=user.id,
-            age=profile_data['age'],
-            gender=profile_data['gender'],
-            city=profile_data['city'],
-            seeking_gender=profile_data.get('seeking_gender', 'all'),
-            goal=profile_data['goal'],
-            bio=profile_data['bio']
-        )
-        
-        if success:
-            # Очищаємо тимчасові дані
-            user_profiles.pop(user.id, None)
-            user_states[user.id] = States.START
-            
-            await update.message.reply_text(
-                "✅ Профіль успішно оновлено!",
-                reply_markup=get_main_menu(user.id)
-            )
-            
-            # Показуємо оновлений профіль
-            await show_my_profile(update, context)
-        else:
-            await update.message.reply_text(
-                "❌ Помилка оновлення профілю",
-                reply_markup=get_main_menu(user.id)
-            )
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка оновлення профілю: {e}")
+    user_data = db.get_user(user.id)
+    if not user_data or not user_data.get('age'):
         await update.message.reply_text(
-            "❌ Помилка оновлення профілю",
+            "❌ У вас ще немає профілю. Спочатку заповніть його!",
             reply_markup=get_main_menu(user.id)
         )
-
-async def handle_edit_profile(update: Update, context: CallbackContext):
-    """Обробка редагування профілю"""
-    user = update.effective_user
-    text = update.message.text
-    state = user_states.get(user.id)
-
-    logger.info(f"🔧 [EDIT PROFILE] {user.first_name}: '{text}', стан: {state}")
-
-    if text == "🔙 Скасувати":
-        user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)
-        await update.message.reply_text("❌ Редагування скасовано", reply_markup=get_main_menu(user.id))
         return
-
-    # Перевіряємо чи існує профіль для редагування
-    if user.id not in user_profiles:
-        # Завантажуємо поточні дані з бази
-        user_data = db.get_user(user.id)
-        if not user_data:
-            await update.message.reply_text("❌ Профіль не знайдено", reply_markup=get_main_menu(user.id))
-            return
-        
-        user_profiles[user.id] = {
-            'age': user_data.get('age'),
-            'gender': user_data.get('gender'),
-            'city': user_data.get('city'),
-            'seeking_gender': user_data.get('seeking_gender', 'all'),
-            'goal': user_data.get('goal'),
-            'bio': user_data.get('bio')
-        }
-
-    if state == States.PROFILE_AGE:
-        try:
-            age = int(text)
-            if age < 18 or age > 100:
-                await update.message.reply_text("❌ Вік має бути від 18 до 100 років")
-                return
-            
-            user_profiles[user.id]['age'] = age
-            user_states[user.id] = States.PROFILE_GENDER
-            
-            keyboard = [[KeyboardButton("👨"), KeyboardButton("👩")], [KeyboardButton("🔙 Скасувати")]]
-            await update.message.reply_text(
-                f"✅ Вік: {age} років\n\nОберіть стать:",
-                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            )
-        except ValueError:
-            await update.message.reply_text("❌ Введіть коректний вік (число)")
-
-    elif state == States.PROFILE_GENDER:
-        if text == "👨":
-            user_profiles[user.id]['gender'] = 'male'
-            user_states[user.id] = States.PROFILE_CITY
-            await update.message.reply_text(
-                "✅ Стать: 👨 Чоловік\n\nВведіть ваше місто:",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        elif text == "👩":
-            user_profiles[user.id]['gender'] = 'female'
-            user_states[user.id] = States.PROFILE_CITY
-            await update.message.reply_text(
-                "✅ Стать: 👩 Жінка\n\nВведіть ваше місто:",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        else:
-            await update.message.reply_text("❌ Оберіть стать з кнопок")
-
-    elif state == States.PROFILE_CITY:
-        if len(text) >= 2:
-            user_profiles[user.id]['city'] = text
-            user_states[user.id] = States.PROFILE_SEEKING_GENDER
-            
-            keyboard = [
-                [KeyboardButton("👩 Дівчину"), KeyboardButton("👨 Хлопця")],
-                [KeyboardButton("👫 Всіх")],
-                [KeyboardButton("🔙 Скасувати")]
-            ]
-            await update.message.reply_text(
-                f"✅ Місто: {text}\n\nКого шукаєте?",
-                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            )
-        else:
-            await update.message.reply_text("❌ Назва міста закоротка. Спробуйте ще раз:")
-
-    elif state == States.PROFILE_SEEKING_GENDER:
-        if text == "👩 Дівчину":
-            user_profiles[user.id]['seeking_gender'] = 'female'
-            user_states[user.id] = States.PROFILE_GOAL
-        elif text == "👨 Хлопця":
-            user_profiles[user.id]['seeking_gender'] = 'male'
-            user_states[user.id] = States.PROFILE_GOAL
-        elif text == "👫 Всіх":
-            user_profiles[user.id]['seeking_gender'] = 'all'
-            user_states[user.id] = States.PROFILE_GOAL
-        else:
-            await update.message.reply_text("❌ Оберіть варіант з кнопок")
-            return
-        
-        seeking_text = {
-            'female': '👩 Дівчину',
-            'male': '👨 Хлопця', 
-            'all': '👫 Всіх'
-        }.get(user_profiles[user.id]['seeking_gender'])
-        
-        keyboard = [
-            [KeyboardButton("💞 Серйозні стосунки"), KeyboardButton("👥 Дружба")],
-            [KeyboardButton("🎉 Разові зустрічі"), KeyboardButton("🏃 Активний відпочинок")],
-            [KeyboardButton("🔙 Скасувати")]
-        ]
-        
-        await update.message.reply_text(
-            f"✅ Шукаю: {seeking_text}\n\nОберіть ціль знайомства:",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        )
-
-    elif state == States.PROFILE_GOAL:
-        goal_map = {
-            '💞 Серйозні стосунки': 'Серйозні стосунки',
-            '👥 Дружба': 'Дружба',
-            '🎉 Разові зустрічі': 'Разові зустрічі',
-            '🏃 Активний відпочинок': 'Активний відпочинок'
-        }
-        
-        if text in goal_map:
-            user_profiles[user.id]['goal'] = goal_map[text]
-            user_states[user.id] = States.PROFILE_BIO
-            
-            await update.message.reply_text(
-                f"✅ Ціль: {text}\n\nНапишіть про себе (мінімум 10 символів):",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True)
-            )
-        else:
-            await update.message.reply_text("❌ Оберіть ціль з кнопок")
-
-    elif state == States.PROFILE_BIO:
-        if len(text) >= 10:
-            user_profiles[user.id]['bio'] = text
-            
-            # ЗБЕРІГАЄМО ЗМІНИ В БАЗУ ДАНИХ
-            success = await save_profile_changes(update, context)
-            
-            if success:
-                await update.message.reply_text(
-                    "✅ Профіль успішно оновлено!",
-                    reply_markup=get_main_menu(user.id)
-                )
-                
-                # Показуємо оновлений профіль
-                await show_my_profile(update, context)
-            else:
-                await update.message.reply_text(
-                    "❌ Помилка збереження профілю",
-                    reply_markup=get_main_menu(user.id)
-                )
-        else:
-            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
-
-async def save_profile_changes(update: Update, context: CallbackContext):
-    """Збереження змін профілю в базу даних"""
-    user = update.effective_user
     
-    try:
-        if user.id not in user_profiles:
-            await update.message.reply_text("❌ Помилка: дані профілю не знайдені")
-            return False
-        
-        profile_data = user_profiles[user.id]
-        
-        success = db.update_user_profile(
-            telegram_id=user.id,
-            age=profile_data['age'],
-            gender=profile_data['gender'],
-            city=profile_data['city'],
-            seeking_gender=profile_data.get('seeking_gender', 'all'),
-            goal=profile_data['goal'],
-            bio=profile_data['bio']
-        )
-        
-        if success:
-            # Очищаємо тимчасові дані
-            user_profiles.pop(user.id, None)
-            user_states[user.id] = States.START
-            
-            logger.info(f"✅ Профіль оновлено для {user.id}")
-            return True
-        else:
-            logger.error(f"❌ Помилка оновлення профілю для {user.id}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка збереження профілю: {e}")
-        return False 
+    # Ініціалізуємо редагування - завантажуємо поточні дані
+    user_states[user.id] = States.PROFILE_AGE
+    user_profiles[user.id] = {
+        'age': user_data.get('age'),
+        'gender': user_data.get('gender'),
+        'city': user_data.get('city'),
+        'seeking_gender': user_data.get('seeking_gender', 'all'),
+        'goal': user_data.get('goal'),
+        'bio': user_data.get('bio')
+    }
+    
+    logger.info(f"🔧 [EDIT PROFILE] Початок редагування для {user.id}")
+    logger.info(f"🔧 [EDIT PROFILE] Поточні дані: {user_profiles[user.id]}")
+    
+    await update.message.reply_text(
+        "✏️ *Редагування профілю*\n\nВведіть ваш вік (18-100):",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Скасувати")]], resize_keyboard=True),
+        parse_mode='Markdown'
+    )
