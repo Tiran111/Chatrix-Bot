@@ -908,7 +908,33 @@ class Database:
             return viewers
         except Exception as e:
             logger.error(f"❌ Помилка отримання переглядів: {e}")
-            return []        
+            return [] 
+
+    def update_or_create_user_profile(self, telegram_id, age=None, gender=None, city=None, 
+                                seeking_gender=None, goal=None, bio=None):
+    """Оновлення або створення профілю користувача"""
+    try:
+        # Спочатку перевіряємо чи існує користувач
+        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+        user = self.cursor.fetchone()
+        
+        if not user:
+            logger.info(f"🔄 Користувача {telegram_id} не знайдено, створюємо...")
+            # Створюємо користувача з базовими даними
+            from telegram import User
+            # Тут потрібно отримати username та first_name з контексту
+            # Для тесту використовуємо тимчасові значення
+            success = self.add_user(telegram_id, "username", "User")
+            if not success:
+                logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
+                return False
+        
+        # Тепер оновлюємо профіль
+        return self.update_user_profile(telegram_id, age, gender, city, seeking_gender, goal, bio)
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в update_or_create_user_profile: {e}")
+        return False               
 
 # Глобальний екземпляр бази даних
 db = Database()

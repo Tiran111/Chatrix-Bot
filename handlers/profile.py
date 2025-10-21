@@ -180,7 +180,7 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
             logger.info(f"🔧 [PROFILE DATA] Повні дані профілю: {user_profiles[user.id]}")
             
             # Зберігаємо профіль
-            success = db.update_user_profile(
+            success = db.update_or_create_user_profile(
                 telegram_id=user.id,
                 age=user_profiles[user.id]['age'],
                 gender=user_profiles[user.id]['gender'],

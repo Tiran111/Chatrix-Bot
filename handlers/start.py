@@ -12,9 +12,21 @@ from keyboards.main_menu import get_main_menu
 from config import ADMIN_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    
-    print(f"🆕 Новий користувач: {user.first_name} (ID: {user.id})")
+    """Обробник команди /start"""
+    try:
+        user = update.effective_user
+        
+        logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
+        
+        # Перевіряємо чи існує користувач, якщо ні - створюємо
+        existing_user = db.get_user(user.id)
+        if not existing_user:
+            db.add_user(user.id, user.username, user.first_name)
+            logger.info(f"✅ Користувач {user.id} доданий в базу")
+        else:
+            logger.info(f"✅ Користувач {user.id} вже існує в базі")
+        
+        # ... решта коду без змін
     
     # Додаємо користувача в базу
     db.add_user(user.id, user.username, user.first_name)
