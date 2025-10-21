@@ -5,7 +5,6 @@ try:
 except ImportError:
     from database.models import db
 from keyboards.main_menu import get_main_menu
-from keyboards.main_menu import get_main_menu
 from utils.states import user_states, States
 from config import ADMIN_ID
 from handlers.notifications import notification_system
@@ -114,7 +113,7 @@ async def reset_database(update: Update, context: CallbackContext):
     try:
         await update.message.reply_text("🔄 Скидання бази даних... Це може зайняти кілька секунд.")
         
-        # Використовуємо метод з models.py
+        # Використовуємо метод з database_postgres.py
         success = db.reset_database()
         
         if success:
@@ -213,12 +212,22 @@ async def handle_user_search(update: Update, context: CallbackContext):
     if results:
         search_text = f"🔍 *Результати пошуку для '{search_query}':*\n\n"
         for i, user_data in enumerate(results[:5], 1):
-            user_name = user_data[3] if len(user_data) > 3 else "Невідомо"
-            user_id = user_data[1] if len(user_data) > 1 else "Невідомо"
-            is_banned = user_data[13] if len(user_data) > 13 else False
-            
-            status = "🚫" if is_banned else "✅"
-            search_text += f"{i}. {status} {user_name} (ID: `{user_id}`)\n"
+            try:
+                # Безпечне отримання даних користувача
+                if isinstance(user_data, dict):
+                    user_id = user_data.get('telegram_id', 'Невідомо')
+                    user_name = user_data.get('first_name', 'Невідомо')
+                    is_banned = user_data.get('is_banned', False)
+                else:
+                    user_id = user_data[1] if len(user_data) > 1 else 'Невідомо'
+                    user_name = user_data[3] if len(user_data) > 3 else 'Невідомо'
+                    is_banned = user_data[13] if len(user_data) > 13 else False
+                
+                status = "🚫" if is_banned else "✅"
+                search_text += f"{i}. {status} {user_name} (ID: `{user_id}`)\n"
+            except Exception as e:
+                logger.error(f"❌ Помилка обробки результату #{i}: {e}")
+                continue
         
         if len(results) > 5:
             search_text += f"\n... та ще {len(results) - 5} користувачів"
@@ -325,6 +334,9 @@ async def update_database(update: Update, context: CallbackContext):
     # Очищення старих даних
     db.cleanup_old_data()
     
+    # Оновлення рейтингів
+    db.update_all_ratings()
+    
     await update.message.reply_text("✅ База даних оновлена успішно!")
 
 async def show_ban_management(update: Update, context: CallbackContext):
@@ -359,9 +371,19 @@ async def show_banned_users(update: Update, context: CallbackContext):
     
     ban_text = "🚫 *Заблоковані користувачі:*\n\n"
     for i, user_data in enumerate(banned_users, 1):
-        user_id = user_data[1] if len(user_data) > 1 else "Невідомо"
-        user_name = user_data[3] if len(user_data) > 3 else "Невідомо"
-        ban_text += f"{i}. {user_name} (ID: `{user_id}`)\n"
+        try:
+            # Безпечне отримання даних користувача
+            if isinstance(user_data, dict):
+                user_id = user_data.get('telegram_id', 'Невідомо')
+                user_name = user_data.get('first_name', 'Невідомо')
+            else:
+                user_id = user_data[1] if len(user_data) > 1 else 'Невідомо'
+                user_name = user_data[3] if len(user_data) > 3 else 'Невідомо'
+            
+            ban_text += f"{i}. {user_name} (ID: `{user_id}`)\n"
+        except Exception as e:
+            logger.error(f"❌ Помилка обробки заблокованого #{i}: {e}")
+            continue
     
     await update.message.reply_text(ban_text, parse_mode='Markdown')
 
@@ -390,6 +412,20 @@ async def show_detailed_stats(update: Update, context: CallbackContext):
         for goal, count in goals_stats:
             percentage = (count/total_active*100) if total_active > 0 else 0
             stats_text += f"\n• {goal}: {count} ({percentage:.1f}%)"
+    
+    # Додаткова статистика по активності
+    try:
+        db.cursor.execute('SELECT COUNT(*) FROM likes WHERE DATE(created_at) = CURRENT_DATE')
+        daily_likes = db.cursor.fetchone()['count']
+        
+        db.cursor.execute('SELECT COUNT(*) FROM matches WHERE DATE(created_at) = CURRENT_DATE')
+        daily_matches = db.cursor.fetchone()['count']
+        
+        stats_text += f"\n\n📊 *Сьогоднішня активність:*"
+        stats_text += f"\n• Лайків: {daily_likes}"
+        stats_text += f"\n• Матчів: {daily_matches}"
+    except Exception as e:
+        logger.error(f"❌ Помилка отримання щоденної статистики: {e}")
     
     await update.message.reply_text(stats_text, parse_mode='Markdown')
 
