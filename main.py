@@ -54,23 +54,16 @@ def keep_alive():
     """Функція для підтримки активності додатку"""
     while True:
         try:
-            # Використовуємо короткі URL для keep-alive
-            urls = [
-                'https://chatrix-bot-4m1p.onrender.com/health',
-                'https://chatrix-bot-4m1p.onrender.com/ping'
-            ]
-            
-            for url in urls:
-                try:
-                    with urllib.request.urlopen(url, timeout=5) as response:
-                        logger.info(f"🔄 Keep-alive: {response.getcode()} - {url}")
-                except Exception as e:
-                    logger.error(f"❌ Keep-alive помилка для {url}: {e}")
-        
+            # Використовуємо urllib замість requests
+            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=5) as response:
+                if response.getcode() == 200:
+                    logger.info(f"🔄 Keep-alive: {response.getcode()}")
+                else:
+                    logger.warning(f"⚠️ Keep-alive: {response.getcode()}")
         except Exception as e:
-            logger.error(f"❌ Keep-alive критична помилка: {e}")
+            logger.error(f"❌ Keep-alive помилка: {e}")
         
-        # Чекаємо 2 хвилини між запитами (менше для безкоштовного плану)
+        # Чекаємо 2 хвилини між запитами
         time.sleep(120)
 
 # Запускаємо keep-alive в окремому потоці
@@ -893,14 +886,12 @@ def init_bot():
 
 @app.route('/')
 def home():
-    """Головна сторінка"""
-    if not bot_initialization_started:
-        init_bot()
+    """Головна сторінка - ШВИДКА відповідь для Render"""
     return "🤖 Chatrix Bot is running! Use /start in Telegram.", 200
 
 @app.route('/health')
 def health():
-    """Простий health check"""
+    """Простий health check - ШВИДКО для Render"""
     return "OK", 200
 
 @app.route('/healthz')
@@ -972,36 +963,31 @@ def debug():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook для Telegram"""
+    """Webhook для Telegram - ШВИДКА відповідь"""
     try:
-        logger.info("📨 Отримано webhook запит від Telegram")
-        
-        if not bot_initialized or application is None:
-            logger.warning("⚠️ Бот ще не ініціалізований, спробуємо ініціалізувати...")
-            init_bot()
-            
-            time.sleep(2)
-            
-            if not bot_initialized or application is None:
-                logger.error("❌ Бот все ще не ініціалізований")
-                return "Bot initializing, please try again later", 200
-            
+        # ШВИДКО обробляємо запит
         update_data = request.get_json()
         
         if update_data is None:
-            logger.error("❌ Порожні дані оновлення")
             return "Empty update data", 400
+            
+        # Якщо бот не ініціалізований - швидко ініціалізуємо
+        if not bot_initialized or application is None:
+            logger.info("🔄 Ініціалізація бота при першому запиті...")
+            init_bot()
+            # ШВИДКО повертаємо відповідь
+            return "Bot initializing", 200
             
         update = Update.de_json(update_data, application.bot)
         
+        # Додаємо в чергу без очікування
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
-        logger.info("✅ Оновлення успішно додано в чергу обробки")
         
         return 'ok'
         
     except Exception as e:
-        logger.error(f"❌ Критична помилка в webhook: {e}", exc_info=True)
-        return "Error", 200
+        logger.error(f"❌ Помилка в webhook: {e}")
+        return "Error", 200  # ШВИДКО повертаємо 200 навіть при помилці
 
 @app.route('/set_webhook')
 def set_webhook_route():
@@ -1045,6 +1031,11 @@ def remove_webhook_route():
         
     except Exception as e:
         return f"❌ Помилка: {e}"
+
+  @app.route('/test')
+def test():
+    """Простий тестовий маршрут - ШВИДКО"""
+    return "✅ Test successful! Server is responding.", 200      
 
 @app.errorhandler(404)
 def not_found(error):
@@ -1121,13 +1112,15 @@ init_check_thread.start()
 if __name__ == '__main__':
     # Запуск сервера
     port = int(os.environ.get('PORT', 10000))
-    print("=" * 60)
+    print("=" * 50)
     print(f"🌐 Запуск Flask сервера на порті {port}...")
-    print("=" * 60)
+    print("=" * 50)
     
-    # Автоматична ініціалізація бота при старті
-    logger.info("🚀 Автоматична ініціалізація бота при старті...")
-    init_bot()
+    # ЗАПУСКАЄМО СЕРВЕР ШВИДКО - без ініціалізації бота
+    print("🚀 Flask сервер запускається...")
+    print("🤖 Бот буде ініціалізований при першому запиті")
+    
+    app.run(host='0.0.0.0', port=port, debug=False)
     
     # Перевіряємо стан ініціалізації
     def check_bot_initialization():
