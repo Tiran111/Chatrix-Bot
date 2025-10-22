@@ -9,6 +9,30 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 from handlers.profile import start_edit_profile
+import socket
+import threading
+
+def start_port_check():
+    """Функція для явного відкриття порту"""
+    def check_port():
+        try:
+            port = int(os.environ.get('PORT', 10000))
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(('0.0.0.0', port))
+            sock.listen(5)
+            print(f"✅ Порт {port} успішно відкрито")
+            return True
+        except Exception as e:
+            print(f"❌ Помилка відкриття порту: {e}")
+            return False
+    
+    # Запускаємо перевірку порту в окремому потоці
+    port_thread = threading.Thread(target=check_port, daemon=True)
+    port_thread.start()
+
+# Викликаємо перевірку порту при старті
+start_port_check()
 
 # Налаштування логування
 logging.basicConfig(
@@ -1018,38 +1042,12 @@ init_check_thread.start()
 
 # ==================== SERVER STARTUP ====================
 
-def create_app():
-    """Створення Flask додатку"""
-    return app
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
+    print("=" * 50)
+    print(f"🌐 Запуск Flask сервера на порті {port}...")
+    print("🤖 Бот готовий до роботи!")
+    print("=" * 50)
     
-    print("=" * 60)
-    print(f"🌐 ЗАПУСК СЕРВЕРА НА ПОРТІ: {port}")
-    print(f"🔗 URL: http://0.0.0.0:{port}")
-    print("🤖 БОТ ГОТОВИЙ ДО РОБОТИ!")
-    print("=" * 60)
-    
-    # Запускаємо сервер
-    try:
-        app.run(
-            host='0.0.0.0',
-            port=port,
-            debug=False,
-            use_reloader=False
-        )
-    except Exception as e:
-        print(f"❌ Помилка запуску: {e}")
-        # Резервний порт
-        try:
-            port = 5000
-            print(f"🔄 Спробую порт {port}...")
-            app.run(
-                host='0.0.0.0',
-                port=port,
-                debug=False,
-                use_reloader=False
-            )
-        except Exception as e2:
-            print(f"❌ Критична помилка: {e2}")
+    # ВАЖЛИВО: Використовуємо 0.0.0.0 для Render
+    app.run(host='0.0.0.0', port=port, debug=False)
