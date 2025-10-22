@@ -9,30 +9,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 from handlers.profile import start_edit_profile
-import socket
-import threading
-
-def start_port_check():
-    """Функція для явного відкриття порту"""
-    def check_port():
-        try:
-            port = int(os.environ.get('PORT', 10000))
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(('0.0.0.0', port))
-            sock.listen(5)
-            print(f"✅ Порт {port} успішно відкрито")
-            return True
-        except Exception as e:
-            print(f"❌ Помилка відкриття порту: {e}")
-            return False
-    
-    # Запускаємо перевірку порту в окремому потоці
-    port_thread = threading.Thread(target=check_port, daemon=True)
-    port_thread.start()
-
-# Викликаємо перевірку порту при старті
-start_port_check()
 
 # Налаштування логування
 logging.basicConfig(
@@ -53,8 +29,7 @@ except ImportError as e:
     raise
 
 try:
-    from config import ADMIN_ID, initialize_config
-    initialize_config()
+    from config import ADMIN_ID
     from config import TOKEN
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту конфігурації: {e}")
@@ -70,15 +45,13 @@ except ImportError as e:
 WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 PORT = int(os.environ.get('PORT', 10000))
 application = None
-event_loop = None
 bot_initialized = False
-bot_initialization_started = False
+event_loop = None
 
 def keep_alive():
     """Функція для підтримки активності додатку"""
     while True:
         try:
-            # Використовуємо urllib замість requests
             with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=5) as response:
                 if response.getcode() == 200:
                     logger.info(f"🔄 Keep-alive: {response.getcode()}")
@@ -87,52 +60,7 @@ def keep_alive():
         except Exception as e:
             logger.error(f"❌ Keep-alive помилка: {e}")
         
-        # Чекаємо 2 хвилини між запитами
         time.sleep(120)
-
-# Запускаємо keep-alive в окремому потоці
-keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-keep_alive_thread.start()
-
-def validate_environment():
-    """Перевірка змінних середовища"""
-    required_vars = ['BOT_TOKEN', 'ADMIN_ID']
-    missing_vars = []
-    
-    for var in required_vars:
-        if not os.environ.get(var):
-            missing_vars.append(var)
-    
-    if missing_vars:
-        error_msg = f"❌ Відсутні обов'язкові змінні середовища: {', '.join(missing_vars)}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-    
-    token = os.environ.get('BOT_TOKEN')
-    if not token or token == 'your_bot_token_here':
-        error_msg = "❌ Ви використовуєте тестовий токен. Встановіть реальний токен бота."
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-    
-    try:
-        admin_id = int(os.environ.get('ADMIN_ID', 0))
-        if admin_id == 0:
-            raise ValueError("ADMIN_ID не встановлено")
-        logger.info(f"✅ ADMIN_ID перевірено: {admin_id}")
-    except ValueError:
-        raise ValueError("❌ ADMIN_ID має бути числовим значенням")
-    
-    logger.info("✅ Змінні середовища перевірені успішно")
-
-def run_async_tasks():
-    """Запуск асинхронних завдань в окремому потоці"""
-    global event_loop
-    event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(event_loop)
-    event_loop.run_forever()
-
-async_thread = threading.Thread(target=run_async_tasks, daemon=True)
-async_thread.start()
 
 async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Детальна відладка бота"""
@@ -220,7 +148,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome_text += "\n\n📝 *Для початку заповни свою анкету*"
             keyboard = [['📝 Заповнити профіль']]
         else:
-            # Меню для всіх користувачів з заповненим профілем
             keyboard = [
                 ['💕 Пошук анкет', '🏙️ По місту'],
                 ['👤 Мій профіль', '📝 Редагувати'],
@@ -228,7 +155,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ['🏆 Топ', "👨‍💼 Зв'язок з адміном"]
             ]
         
-        # Додаємо адмін панель тільки для адміна
         if user.id == ADMIN_ID:
             keyboard.append(['👑 Адмін панель'])
         
@@ -663,7 +589,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_update(update):
     """Обробка оновлення з таймаутом"""
     try:
-        # Обробляємо оновлення з таймаутом 25 секунд (менше ніж 30s Render timeout)
         await asyncio.wait_for(application.process_update(update), timeout=25.0)
         logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
     except asyncio.TimeoutError:
@@ -671,241 +596,63 @@ async def process_update(update):
     except Exception as e:
         logger.error(f"❌ Помилка обробки оновлення: {e}")
 
-async def initialize_bot_async():
-    """Асинхронна ініціалізація бота"""
-    global application, bot_initialized
+def init_bot_simple():
+    """Проста ініціалізація бота без блокування"""
+    global application, bot_initialized, event_loop
     
-    try:
-        logger.info("🚀 Асинхронна ініціалізація бота...")
+    if bot_initialized:
+        return True
         
-        from config import initialize_config
-        initialize_config()
+    try:
         from config import TOKEN
         
+        # Створюємо event loop
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
+        
+        # Запускаємо event loop в окремому потоці
+        def run_event_loop():
+            asyncio.set_event_loop(event_loop)
+            event_loop.run_forever()
+        
+        event_thread = threading.Thread(target=run_event_loop, daemon=True)
+        event_thread.start()
+        
+        # Швидка ініціалізація
         application = Application.builder().token(TOKEN).build()
-        logger.info("✅ Application створено")
         
-        setup_handlers(application)
-        logger.info("✅ Обробники налаштовано")
+        # Мінімальні обробники
+        setup_handlers_simple(application)
         
-        await application.initialize()
-        logger.info("✅ Бот ініціалізовано")
+        # Ініціалізуємо
+        application.initialize()
         
-        await application.bot.set_webhook(WEBHOOK_URL)
-        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
+        # Встановлюємо вебхук
+        application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Запускаємо keep-alive
+        keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+        keep_alive_thread.start()
         
         bot_initialized = True
-        logger.info("🤖 Бот успішно ініціалізовано та готовий до роботи!")
+        logger.info("✅ Бот швидко ініціалізовано")
+        return True
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}", exc_info=True)
+        logger.error(f"❌ Помилка ініціалізації: {e}")
+        return False
 
-def setup_handlers(application):
-    """Налаштування обробників повідомлень"""
-    logger.info("🔄 Налаштування обробників...")
+def setup_handlers_simple(application):
+    """Мінімальне налаштування обробників"""
+    logger.info("🔄 Налаштування основних обробників...")
     
-    # Додаємо debug команду
+    # Основні команди
+    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("debug", debug_bot))
-    print("✅ Debug команда додана")
-    
-    # Додаємо команду для перевірки профілю
-    async def check_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Перевірка стану профілю"""
-        user = update.effective_user
-        user_data, is_complete = db.get_user_profile(user.id)
-        
-        message = f"""
-🔍 *ПЕРЕВІРКА ПРОФІЛЮ*
-
-👤 ID: {user.id}
-📛 Ім'я: {user.first_name}
-✅ Профіль заповнений: {is_complete}
-
-📊 Дані з бази:
-• Вік: {user_data.get('age') if user_data else 'Немає'}
-• Стать: {user_data.get('gender') if user_data else 'Немає'}
-• Місто: {user_data.get('city') if user_data else 'Немає'}
-• Фото: {user_data.get('has_photo') if user_data else 'Немає'}
-"""
-        await update.message.reply_text(message, parse_mode='Markdown')
-    
-    application.add_handler(CommandHandler("check", check_profile))
-    print("✅ Check команда додана")
-    
-    # Додаємо команду для скидання профілю
-    async def reset_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Скидання профілю для тестування"""
-        user = update.effective_user
-        
-        try:
-            # Скидаємо основні поля профілю
-            db.cursor.execute('''
-                UPDATE users 
-                SET age = NULL, gender = NULL, city = NULL, 
-                    seeking_gender = NULL, goal = NULL, bio = NULL,
-                    has_photo = FALSE
-                WHERE telegram_id = %s
-            ''', (user.id,))
-            db.conn.commit()
-            
-            # Видаляємо фото
-            db.cursor.execute('''
-                DELETE FROM photos 
-                WHERE user_id IN (SELECT id FROM users WHERE telegram_id = %s)
-            ''', (user.id,))
-            db.conn.commit()
-            
-            await update.message.reply_text(
-                "✅ Профіль скинуто! Тепер ви можете створити новий профіль.",
-                reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка скидання профілю: {e}")
-            await update.message.reply_text("❌ Помилка скидання профілю")
-    
-    application.add_handler(CommandHandler("reset", reset_profile))
-    print("✅ Reset команда додана")
-    
-    # Додаємо команду для тестування помилок
-    async def test_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Тестування помилок"""
-        try:
-            # Спеціально викликаємо помилку для тесту
-            raise Exception("Тестова помилка для перевірки логування")
-        except Exception as e:
-            logger.error(f"🔧 ТЕСТ ПОМИЛКИ: {e}", exc_info=True)
-            await update.message.reply_text(f"🔧 Тест помилки: {e}")
-    
-    application.add_handler(CommandHandler("testerror", test_error))
-    print("✅ TestError команда додана")
-    
-    # Додаємо команду для тестування сповіщень
-    async def test_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Тестування сповіщень"""
-        try:
-            from handlers.notifications import notification_system
-            await notification_system.notify_new_like(context, ADMIN_ID, 1385645772)  # Адмін -> ваш ID
-            await update.message.reply_text("✅ Тестове сповіщення про лайк відправлено")
-        except Exception as e:
-            logger.error(f"❌ Помилка тесту сповіщень: {e}")
-            await update.message.reply_text(f"❌ Помилка сповіщень: {e}")
-    
-    application.add_handler(CommandHandler("testnotify", test_notification))
-    print("✅ TestNotify команда додана")
-    
-    # Додаємо команду для перевірки бази даних
-    async def check_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Перевірка стану бази даних"""
-        try:
-            users = db.get_all_active_users()
-            total_users = db.get_users_count()
-            
-            message = f"""
-📊 *СТАН БАЗИ ДАНИХ*
-
-👥 Всього користувачів: {total_users}
-✅ Активних анкет: {len(users)}
-
-📋 *Список активних користувачів:*
-"""
-            for user in users:
-                if isinstance(user, dict):
-                    user_id = user.get('telegram_id')
-                    name = user.get('first_name', 'Невідомо')
-                    city = user.get('city', 'Невідомо')
-                else:
-                    user_id = user[1] if len(user) > 1 else 'Невідомо'
-                    name = user[3] if len(user) > 3 else 'Невідомо'
-                    city = user[6] if len(user) > 6 else 'Невідомо'
-                
-                message += f"• {name} (ID: {user_id}) - {city}\n"
-            
-            await update.message.reply_text(message, parse_mode='Markdown')
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка перевірки бази даних: {e}")
-            await update.message.reply_text(f"❌ Помилка: {e}")
-    
-    application.add_handler(CommandHandler("checkdb", check_database))
-    print("✅ CheckDB команда додана")
-    
-    # Додаємо команду для додавання тестового користувача
-    async def add_test_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Додати тестового користувача для пошуку"""
-        try:
-            # Додаємо тестового користувача
-            test_user_id = 123456789  # Змініть на унікальний ID
-            db.add_user(test_user_id, "testuser", "Тестовий Користувач")
-            
-            # Заповнюємо профіль
-            db.update_user_profile(
-                telegram_id=test_user_id,
-                age=25,
-                gender='female',
-                city='Київ',
-                seeking_gender='male',
-                goal='Дружба',
-                bio='Тестовий профіль для перевірки пошуку'
-            )
-            
-            await update.message.reply_text("✅ Тестового користувача додано!")
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка додавання тестового користувача: {e}")
-            await update.message.reply_text("❌ Помилка додавання тестового користувача")
-    
-    application.add_handler(CommandHandler("addtest", add_test_user))
-    print("✅ AddTest команда додана")
-
-    # Додаємо команду для очищення профілю
-    async def clear_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Очищення профілю користувача"""
-        user = update.effective_user
-        
-        try:
-            # Видаляємо всі дані профілю
-            db.cursor.execute('''
-                UPDATE users 
-                SET age = NULL, gender = NULL, city = NULL, 
-                    seeking_gender = NULL, goal = NULL, bio = NULL,
-                    has_photo = FALSE, rating = 5.0
-                WHERE telegram_id = %s
-            ''', (user.id,))
-            
-            # Видаляємо фото
-            db.cursor.execute('''
-                DELETE FROM photos 
-                WHERE user_id IN (SELECT id FROM users WHERE telegram_id = %s)
-            ''', (user.id,))
-            
-            db.conn.commit()
-            
-            # Очищаємо тимчасові дані
-            user_states[user.id] = States.START
-            from utils.states import user_profiles
-            user_profiles.pop(user.id, None)
-            
-            await update.message.reply_text(
-                "✅ Ваш профіль повністю очищено! Тепер ви можете створити новий профіль.",
-                reply_markup=ReplyKeyboardMarkup([['📝 Заповнити профіль']], resize_keyboard=True)
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка очищення профілю: {e}")
-            await update.message.reply_text("❌ Помилка очищення профілю")
-
-    application.add_handler(CommandHandler("clear", clear_profile))
-    print("✅ Clear команда додана")
-    
-    # Додаємо команди для скасування
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("reset_state", reset_state))
     
-    # Решта ваших обробників залишається без змін...
-    application.add_handler(CommandHandler("start", start))
-    
-    # Обробники кнопок
+    # Основні обробники кнопок
     application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|📝 Редагувати)$'), start_profile_creation))
     application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
     application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
@@ -922,46 +669,13 @@ def setup_handlers(application):
     
     # Адмін обробники
     application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    application.add_handler(MessageHandler(filters.Regex('^(📋 Список користувачів|🚫 Заблокувати користувача|✅ Розблокувати користувача|📋 Список заблокованих|🔙 Назад до адмін-панелі)$'), universal_handler))
     
     # Фото та універсальний обробник
     application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
 
     application.add_error_handler(error_handler)
-    logger.info("✅ Всі обробники налаштовано")
-
-def init_bot():
-    """Ініціалізація бота - оптимізована версія"""
-    global event_loop, bot_initialization_started
-    
-    if bot_initialization_started:
-        return
-        
-    bot_initialization_started = True
-    
-    try:
-        validate_environment()
-        
-        max_wait_time = 15  # Зменшили час очікування
-        start_time = time.time()
-        
-        while event_loop is None and (time.time() - start_time) < max_wait_time:
-            time.sleep(0.1)
-            logger.info("⏳ Чекаємо на ініціалізацію event loop...")
-        
-        if event_loop is None:
-            logger.error("❌ Event loop не ініціалізований")
-            return
-        
-        logger.info("🔄 Запускаємо ініціалізацію бота через event loop...")
-        
-        future = asyncio.run_coroutine_threadsafe(initialize_bot_async(), event_loop)
-        future.result(timeout=30)  # Зменшили таймаут
-        logger.info("✅ Бот успішно ініціалізовано")
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка запуску бота: {e}")
+    logger.info("✅ Основні обробники налаштовано")
 
 # ==================== FLASK ROUTES ====================
 
@@ -979,9 +693,14 @@ def ping():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook для Telegram"""
+    """Webhook для Telegram з відкладною ініціалізацією"""
+    global application, bot_initialized
+    
     try:
-        if not bot_initialized or application is None:
+        # Ініціалізуємо бота при першому запиті
+        if not bot_initialized:
+            logger.info("🔄 Ініціалізація бота при першому запиті...")
+            init_bot_simple()
             return "Bot initializing", 200
             
         update_data = request.get_json()
@@ -989,10 +708,13 @@ def webhook():
             return "Empty update data", 400
             
         update = Update.de_json(update_data, application.bot)
+        
+        # Обробляємо оновлення асинхронно
         asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
         
         return 'ok'
     except Exception as e:
+        logger.error(f"❌ Webhook помилка: {e}")
         return "Error", 200
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
@@ -1022,32 +744,18 @@ except Exception as e:
     print(f"❌ Помилка тесту бази даних: {e}")
 
 print("=" * 60)
-print("🚀 Бот повністю готовий до роботи!")
+print("🚀 СЕРВЕР ГОТОВИЙ ДО РОБОТИ!")
+print("📱 Бот ініціалізується при першому запиті")
 print("=" * 60)
-
-# Автоматична ініціалізація бота при старті
-logger.info("🚀 Автоматична ініціалізація бота при старті...")
-init_bot()
-
-# Перевіряємо стан ініціалізації через кілька секунд
-def check_bot_initialization():
-    time.sleep(10)
-    if bot_initialized:
-        logger.info("🎉 Бот успішно ініціалізовано та готовий до роботи!")
-    else:
-        logger.warning("⚠️ Бот ще не ініціалізовано, буде ініціалізовано при першому запиті")
-
-init_check_thread = threading.Thread(target=check_bot_initialization, daemon=True)
-init_check_thread.start()
 
 # ==================== SERVER STARTUP ====================
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
+    
     print("=" * 50)
-    print(f"🌐 Запуск Flask сервера на порті {port}...")
-    print("🤖 Бот готовий до роботи!")
+    print(f"🌐 Запуск сервера на порті {port}...")
+    print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
     
-    # ВАЖЛИВО: Використовуємо 0.0.0.0 для Render
     app.run(host='0.0.0.0', port=port, debug=False)
