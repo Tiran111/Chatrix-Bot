@@ -29,145 +29,101 @@ class Database:
 
     def init_db(self):
         """Ініціалізація бази даних"""
-        logger.info("🔄 Ініціалізація бази даних PostgreSQL...")
-
-        # Таблиця користувачів
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                telegram_id BIGINT UNIQUE NOT NULL,
-                username TEXT,
-                first_name TEXT NOT NULL,
-                age INTEGER,
-                gender TEXT,
-                city TEXT,
-                seeking_gender TEXT,
-                goal TEXT,
-                bio TEXT,
-                has_photo BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                likes_count INTEGER DEFAULT 0,
-                is_banned BOOLEAN DEFAULT FALSE,
-                rating REAL DEFAULT 5.0,
-                daily_likes_count INTEGER DEFAULT 0,
-                last_like_date DATE,
-                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Таблиця фото
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS photos (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                file_id TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Таблиця лайків
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS likes (
-                id SERIAL PRIMARY KEY,
-                from_user_id INTEGER NOT NULL REFERENCES users(id),
-                to_user_id INTEGER NOT NULL REFERENCES users(id),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(from_user_id, to_user_id)
-            )
-        ''')
-        
-        # Таблиця матчів
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS matches (
-                id SERIAL PRIMARY KEY,
-                user1_id INTEGER NOT NULL REFERENCES users(id),
-                user2_id INTEGER NOT NULL REFERENCES users(id),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user1_id, user2_id)
-            )
-        ''')
-        
-        # Таблиця для відстеження переглядів профілю
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS profile_views (
-                id SERIAL PRIMARY KEY,
-                viewer_id INTEGER NOT NULL REFERENCES users(id),
-                viewed_user_id INTEGER NOT NULL REFERENCES users(id),
-                viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        self.conn.commit()
-        logger.info("✅ База даних PostgreSQL ініціалізована")
+        logger.info("🔄 Ініціалізація бази даних...")
+        try:
+            # Створення таблиці users
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE NOT NULL,
+                    username VARCHAR(255),
+                    first_name VARCHAR(255) NOT NULL,
+                    age INTEGER,
+                    gender VARCHAR(10),
+                    city VARCHAR(255),
+                    seeking_gender VARCHAR(10) DEFAULT 'all',
+                    goal VARCHAR(255),
+                    bio TEXT,
+                    has_photo BOOLEAN DEFAULT FALSE,
+                    rating FLOAT DEFAULT 5.0,
+                    likes_count INTEGER DEFAULT 0,
+                    is_banned BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Створення таблиці photos
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS photos (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    file_id VARCHAR(255) NOT NULL,
+                    is_main BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Створення таблиці likes
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS likes (
+                    id SERIAL PRIMARY KEY,
+                    from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    to_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(from_user_id, to_user_id)
+                )
+            ''')
+            
+            # Створення таблиці matches
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS matches (
+                    id SERIAL PRIMARY KEY,
+                    user1_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    user2_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user1_id, user2_id)
+                )
+            ''')
+            
+            # Створення таблиці profile_views
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS profile_views (
+                    id SERIAL PRIMARY KEY,
+                    viewer_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            self.conn.commit()
+            logger.info("✅ База даних ініціалізована")
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка ініціалізації бази даних: {e}")
+            self.conn.rollback()
 
     def update_database_structure(self):
         """Оновлення структури бази даних"""
         try:
-            logger.info("🔄 Перевірка структури бази даних...")
+            # Додавання відсутніх стовпців, якщо потрібно
+            columns_to_add = [
+                "ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE"
+            ]
             
-            # Перевіряємо наявність стовпців
-            self.cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'users'
-            """)
-            columns = [row['column_name'] for row in self.cursor.fetchall()]
-            
-            logger.info(f"🔍 Наявні стовпці: {columns}")
-            
-            changes_made = False
-            
-            # Додаємо відсутні стовпці
-            if 'first_name' not in columns:
-                logger.info("➕ Додаємо стовпець first_name...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN first_name TEXT')
-                changes_made = True
-            
-            if 'last_active' not in columns:
-                logger.info("➕ Додаємо стовпець last_active...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
-                changes_made = True
-            
-            if 'rating' not in columns:
-                logger.info("➕ Додаємо стовпець rating...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN rating REAL')
-                changes_made = True
-            
-            if 'daily_likes_count' not in columns:
-                logger.info("➕ Додаємо стовпець daily_likes_count...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN daily_likes_count INTEGER')
-                changes_made = True
-            
-            if 'last_like_date' not in columns:
-                logger.info("➕ Додаємо стовпець last_like_date...")
-                self.cursor.execute('ALTER TABLE users ADD COLUMN last_like_date DATE')
-                changes_made = True
-            
-            if changes_made:
-                self.conn.commit()
-                logger.info("✅ Структура бази даних оновлена")
-                self.initialize_new_columns()
-            else:
-                logger.info("✅ Структура бази даних вже актуальна")
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення структури БД: {e}")
-
-    def initialize_new_columns(self):
-        """Ініціалізація значень для нових стовпців"""
-        try:
-            logger.info("🔄 Ініціалізація значень для нових стовпців...")
-            
-            self.cursor.execute("UPDATE users SET first_name = 'Користувач' WHERE first_name IS NULL")
-            self.cursor.execute("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE last_active IS NULL")
-            self.cursor.execute("UPDATE users SET rating = 5.0 WHERE rating IS NULL")
-            self.cursor.execute("UPDATE users SET daily_likes_count = 0 WHERE daily_likes_count IS NULL")
+            for column_sql in columns_to_add:
+                try:
+                    self.cursor.execute(f'ALTER TABLE users {column_sql}')
+                except Exception as e:
+                    logger.warning(f"⚠️ Не вдалося додати стовпець: {e}")
             
             self.conn.commit()
-            logger.info("✅ Значення для нових стовпців ініціалізовані")
+            logger.info("✅ Структура бази даних оновлена")
             
         except Exception as e:
-            logger.error(f"❌ Помилка ініціалізації стовпців: {e}")
+            logger.error(f"❌ Помилка оновлення структури: {e}")
+            self.conn.rollback()
 
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
@@ -175,562 +131,526 @@ class Database:
             # Перевіряємо чи існує користувач
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             existing_user = self.cursor.fetchone()
-        
+            
             if existing_user:
                 logger.info(f"ℹ️ Користувач {telegram_id} вже існує")
                 return True
-        
+            
             # Додаємо нового користувача
             self.cursor.execute('''
                 INSERT INTO users (telegram_id, username, first_name, created_at, last_active, rating)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (telegram_id, username, first_name, datetime.now(), datetime.now(), 5.0))
-        
+            
             self.conn.commit()
             logger.info(f"✅ Користувач {telegram_id} успішно доданий")
             return True
-        
+            
         except Exception as e:
             logger.error(f"❌ Помилка додавання користувача {telegram_id}: {e}")
             self.conn.rollback()
             return False
 
     def get_user(self, telegram_id):
-        """Отримання користувача за telegram_id"""
+        """Отримання користувача за ID"""
         try:
             self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
             user = self.cursor.fetchone()
-            if user:
-                return dict(user)
-            return None
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача: {e}")
-            return None
-
-  def update_user_profile(self, telegram_id, age=None, gender=None, city=None, 
-                      seeking_gender=None, goal=None, bio=None):
-    """Оновлення профілю користувача"""
-    try:
-        # Спочатку перевіряємо чи існує користувач
-        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-        user = self.cursor.fetchone()
-        
-        if not user:
-            logger.error(f"❌ Користувача {telegram_id} не знайдено для оновлення")
-            # Спробуємо створити користувача
-            from main import application
-            if application and application.bot:
-                try:
-                    chat = await application.bot.get_chat(telegram_id)
-                    self.add_user(telegram_id, chat.username, chat.first_name)
-                    logger.info(f"✅ Автоматично створено користувача {telegram_id}")
-                except Exception as e:
-                    logger.error(f"❌ Не вдалося створити користувача {telegram_id}: {e}")
-                    return False
-            else:
-                return False
-        
-        # Оновлюємо профіль
-        update_fields = []
-        values = []
-        
-        if age is not None:
-            update_fields.append("age = %s")
-            values.append(age)
-        if gender is not None:
-            update_fields.append("gender = %s")
-            values.append(gender)
-        if city is not None:
-            update_fields.append("city = %s")
-            values.append(city)
-        if seeking_gender is not None:
-            update_fields.append("seeking_gender = %s")
-            values.append(seeking_gender)
-        if goal is not None:
-            update_fields.append("goal = %s")
-            values.append(goal)
-        if bio is not None:
-            update_fields.append("bio = %s")
-            values.append(bio)
-        
-        # Додаємо оновлення часу останньої активності
-        update_fields.append("last_active = %s")
-        values.append(datetime.now())
-        
-        # Додаємо telegram_id в кінець для WHERE умови
-        values.append(telegram_id)
-        
-        if update_fields:
-            query = f"UPDATE users SET {', '.join(update_fields)} WHERE telegram_id = %s"
-            self.cursor.execute(query, values)
-            self.conn.commit()
-            
-            logger.info(f"✅ Профіль користувача {telegram_id} оновлено")
-            return True
-        else:
-            logger.warning(f"⚠️ Немає полів для оновлення для користувача {telegram_id}")
-            return True
-            
-    except Exception as e:
-        logger.error(f"❌ Помилка оновлення профілю {telegram_id}: {e}")
-        self.conn.rollback()
-        return False
-
-    def update_user_rating(self, telegram_id):
-        """Оновлення рейтингу користувача"""
-        try:
-            user = self.get_user(telegram_id)
-            if not user:
-                return
-            
-            base_rating = 5.0
-            bonus = 0.0
-            
-            if user.get('has_photo'):
-                bonus += 1.0
-            
-            if user.get('bio') and len(user.get('bio', '')) > 20:
-                bonus += 1.0
-            
-            likes_count = user.get('likes_count', 0)
-            bonus += min(likes_count * 0.1, 3.0)
-            
-            new_rating = min(base_rating + bonus, 10.0)
-            
-            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
-            logger.info(f"✅ Рейтинг оновлено для {telegram_id}: {new_rating}")
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення рейтингу: {e}")
-
-    def get_random_user(self, current_user_id, city=None):
-        """Отримання випадкового користувача для пошуку"""
-        try:
-            current_user = self.get_user(current_user_id)
-            if not current_user:
-                logger.error(f"❌ Поточного користувача {current_user_id} не знайдено")
-                return None
-            
-            seeking_gender = current_user.get('seeking_gender', 'all')
-            current_gender = current_user.get('gender')
-            
-            query = '''
-                SELECT u.* FROM users u
-                WHERE u.telegram_id != %s AND u.age IS NOT NULL 
-                AND u.has_photo = TRUE AND u.is_banned = FALSE
-            '''
-            params = [current_user_id]
-            
-            if seeking_gender != 'all':
-                query += ' AND u.gender = %s'
-                params.append(seeking_gender)
-            
-            if city:
-                query += ' AND u.city LIKE %s'
-                params.append(f'%{city}%')
-            
-            # ДЛЯ АДМІНА - не виключаємо вже лайкнутих користувачів
-            admin_id_str = os.environ.get('ADMIN_ID', '0')
-            if str(current_user_id) != admin_id_str:  # Тільки для звичайних користувачів
-                query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
-                params.append(current_user_id)
-            
-            query += ' ORDER BY RANDOM() LIMIT 1'
-            
-            self.cursor.execute(query, params)
-            user = self.cursor.fetchone()
-            
             return user
         except Exception as e:
-            logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
+            logger.error(f"❌ Помилка отримання користувача {telegram_id}: {e}")
             return None
 
-    def add_profile_photo(self, telegram_id, file_id):
-        """Додавання фото до профілю"""
+    def update_user_profile(self, telegram_id, age=None, gender=None, city=None, 
+                          seeking_gender=None, goal=None, bio=None):
+        """Оновлення профілю користувача"""
         try:
-            logger.info(f"🔄 Додаємо фото для {telegram_id}")
-            
+            # Спочатку перевіряємо чи існує користувач
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             user = self.cursor.fetchone()
             
             if not user:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено")
+                logger.error(f"❌ Користувача {telegram_id} не знайдено для оновлення")
                 return False
             
-            user_id = user['id']
+            # Оновлюємо профіль
+            update_fields = []
+            values = []
             
-            current_photos = self.get_profile_photos(telegram_id)
-            if len(current_photos) >= 3:
-                logger.error("❌ Досягнуто ліміт фото (максимум 3)")
-                return False
+            if age is not None:
+                update_fields.append("age = %s")
+                values.append(age)
+            if gender is not None:
+                update_fields.append("gender = %s")
+                values.append(gender)
+            if city is not None:
+                update_fields.append("city = %s")
+                values.append(city)
+            if seeking_gender is not None:
+                update_fields.append("seeking_gender = %s")
+                values.append(seeking_gender)
+            if goal is not None:
+                update_fields.append("goal = %s")
+                values.append(goal)
+            if bio is not None:
+                update_fields.append("bio = %s")
+                values.append(bio)
             
-            self.cursor.execute('INSERT INTO photos (user_id, file_id) VALUES (%s, %s)', (user_id, file_id))
-            self.cursor.execute('UPDATE users SET has_photo = TRUE WHERE telegram_id = %s', (telegram_id,))
-            self.update_user_rating(telegram_id)
+            # Додаємо оновлення часу останньої активності
+            update_fields.append("last_active = %s")
+            values.append(datetime.now())
             
-            self.conn.commit()
-            logger.info("✅ Фото успішно додано до бази даних!")
-            return True
+            # Додаємо telegram_id в кінець для WHERE умови
+            values.append(telegram_id)
             
+            if update_fields:
+                query = f"UPDATE users SET {', '.join(update_fields)} WHERE telegram_id = %s"
+                self.cursor.execute(query, values)
+                self.conn.commit()
+                
+                logger.info(f"✅ Профіль користувача {telegram_id} оновлено")
+                return True
+            else:
+                logger.warning(f"⚠️ Немає полів для оновлення для користувача {telegram_id}")
+                return True
+                
         except Exception as e:
-            logger.error(f"❌ Помилка додавання фото: {e}")
+            logger.error(f"❌ Помилка оновлення профілю {telegram_id}: {e}")
+            self.conn.rollback()
             return False
 
-    def get_main_photo(self, telegram_id):
-        """Отримання першого фото користувача"""
+    def safe_update_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
+        """Безпечне оновлення профілю з автоматичним створенням користувача"""
         try:
-            self.cursor.execute('''
-                SELECT p.file_id FROM photos p
-                JOIN users u ON p.user_id = u.id
-                WHERE u.telegram_id = %s
-                LIMIT 1
-            ''', (telegram_id,))
-            result = self.cursor.fetchone()
-            return result['file_id'] if result else None
+            # Перевіряємо чи існує користувач, якщо ні - створюємо
+            user_data = self.get_user(telegram_id)
+            if not user_data:
+                logger.info(f"🔄 Користувача {telegram_id} не знайдено, створюємо...")
+                # Створюємо з мінімальними даними
+                success = self.add_user(telegram_id, "unknown", "User")
+                if not success:
+                    logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
+                    return False
+            
+            # Тепер оновлюємо профіль
+            return self.update_user_profile(telegram_id, age, gender, city, seeking_gender, goal, bio)
+            
         except Exception as e:
-            logger.error(f"❌ Помилка отримання фото: {e}")
-            return None
-
-    def get_profile_photos(self, telegram_id):
-        """Отримання всіх фото профілю"""
-        try:
-            self.cursor.execute('''
-                SELECT p.file_id FROM photos p
-                JOIN users u ON p.user_id = u.id
-                WHERE u.telegram_id = %s
-            ''', (telegram_id,))
-            photos = self.cursor.fetchall()
-            return [photo['file_id'] for photo in photos]
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання фото: {e}")
-            return []
+            logger.error(f"❌ Помилка в safe_update_profile: {e}")
+            return False
 
     def get_user_profile(self, telegram_id):
         """Отримання профілю користувача"""
         try:
             self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
             user = self.cursor.fetchone()
-            if user and user['age'] is not None:
-                return user, True
-            return user, False
+            
+            if user:
+                # Перевіряємо чи профіль заповнений
+                is_complete = all([
+                    user.get('age'),
+                    user.get('gender'), 
+                    user.get('city'),
+                    user.get('goal'),
+                    user.get('bio')
+                ])
+                return user, is_complete
+            return None, False
+            
         except Exception as e:
-            logger.error(f"❌ Помилка отримання профілю: {e}")
+            logger.error(f"❌ Помилка отримання профілю {telegram_id}: {e}")
             return None, False
 
-    def get_users_by_city(self, city, current_user_id):
-        """Отримання користувачів за містом"""
+    def add_profile_photo(self, telegram_id, file_id, is_main=False):
+        """Додавання фото до профілю"""
         try:
-            current_user = self.get_user(current_user_id)
-            if not current_user:
-                return []
-        
-            seeking_gender = current_user.get('seeking_gender', 'all')
-        
-            # Очищаємо назву міста від емодзі та зайвих пробілів
-            clean_city = city.replace('🏙️', '').strip()
-        
-            logger.info(f"🔍 [CITY SEARCH] Шукаємо в місті: '{clean_city}', шукає стать: {seeking_gender}")
-        
-            query = '''
-                SELECT u.* FROM users u
-                WHERE u.telegram_id != %s 
-                AND LOWER(u.city) LIKE LOWER(%s)
-                AND u.age IS NOT NULL 
-                AND u.has_photo = TRUE 
-                AND u.is_banned = FALSE
-            '''
-            params = [current_user_id, f'%{clean_city}%']
-        
-            if seeking_gender != 'all':
-                query += ' AND u.gender = %s'
-                params.append(seeking_gender)
-        
-            # Виключаємо вже лайкнутих користувачів
-            admin_id_str = os.environ.get('ADMIN_ID', '0')
-            if str(current_user_id) != admin_id_str:
-                query += ' AND u.telegram_id NOT IN (SELECT u2.telegram_id FROM users u2 JOIN likes l ON u2.id = l.to_user_id JOIN users u3 ON u3.id = l.from_user_id WHERE u3.telegram_id = %s)'
-                params.append(current_user_id)
-        
-            query += ' ORDER BY RANDOM() LIMIT 20'
-        
-            self.cursor.execute(query, params)
-            users = self.cursor.fetchall()
-        
-            logger.info(f"🔍 [CITY SEARCH] Знайдено користувачів: {len(users)}")
-        
-            return users
-        except Exception as e:
-            logger.error(f"❌ Помилка пошуку за містом: {e}")
-            return []
-
-    def get_likes_count(self, user_id):
-        """Отримання кількості лайків"""
-        try:
-            self.cursor.execute('SELECT likes_count FROM users WHERE telegram_id = %s', (user_id,))
-            result = self.cursor.fetchone()
-            return result['likes_count'] if result else 0
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання лайків: {e}")
-            return 0
-
-    def can_like_today(self, user_id):
-        """Перевірка чи може користувач ставити лайки сьогодні"""
-        try:
-            user = self.get_user(user_id)
+            # Отримуємо ID користувача
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+            user = self.cursor.fetchone()
+            
             if not user:
-                return False, "Користувача не знайдено"
+                logger.error(f"❌ Користувача {telegram_id} не знайдено для додавання фото")
+                return False
             
-            today = date.today()
-            last_like_date = user.get('last_like_date')
-            daily_likes = user.get('daily_likes_count', 0)
+            # Перевіряємо кількість фото
+            self.cursor.execute('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user['id'],))
+            photo_count = self.cursor.fetchone()['count']
             
-            if last_like_date != today:
-                self.cursor.execute(
-                    'UPDATE users SET daily_likes_count = 0, last_like_date = %s WHERE telegram_id = %s',
-                    (today, user_id)
-                )
-                self.conn.commit()
-                return True, "Можна ставити лайки"
+            if photo_count >= 3:
+                logger.warning(f"⚠️ Користувач {telegram_id} вже має максимальну кількість фото")
+                return False
             
-            if daily_likes >= 50:
-                return False, "Досягнуто денний ліміт лайків (50)"
-            
-            return True, f"Залишилось лайків: {50 - daily_likes}"
-            
-        except Exception as e:
-            logger.error(f"❌ Помилка перевірки лайків: {e}")
-            return False, "Помилка перевірки"
-
-    def add_like(self, from_user_id, to_user_id):
-        """Додавання лайку з перевіркою обмежень"""
-        try:
-            can_like, message = self.can_like_today(from_user_id)
-            if not can_like:
-                return False, message
-            
-            if self.has_liked(from_user_id, to_user_id):
-                return False, "Ви вже лайкали цього користувача"
-            
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (from_user_id,))
-            from_user = self.cursor.fetchone()
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (to_user_id,))
-            to_user = self.cursor.fetchone()
-            
-            if not from_user or not to_user:
-                return False, "Користувача не знайдено"
-            
-            self.cursor.execute('INSERT INTO likes (from_user_id, to_user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING', (from_user['id'], to_user['id']))
-            self.cursor.execute('UPDATE users SET likes_count = likes_count + 1 WHERE id = %s', (to_user['id'],))
-            
-            today = date.today()
-            self.cursor.execute(
-                'UPDATE users SET daily_likes_count = daily_likes_count + 1, last_like_date = %s WHERE telegram_id = %s',
-                (today, from_user_id)
-            )
-            
-            self.update_user_rating(to_user_id)
+            # Додаємо фото
+            self.cursor.execute('''
+                INSERT INTO photos (user_id, file_id, is_main)
+                VALUES (%s, %s, %s)
+            ''', (user['id'], file_id, is_main))
             
             self.conn.commit()
-            
-            is_mutual = self.has_liked(to_user_id, from_user_id)
-            
-            if is_mutual:
-                self.cursor.execute('''
-                    INSERT INTO matches (user1_id, user2_id)
-                    VALUES (%s, %s) ON CONFLICT DO NOTHING
-                ''', (min(from_user['id'], to_user['id']), max(from_user['id'], to_user['id'])))
-                self.conn.commit()
-            
-            return True, "Лайк додано" if not is_mutual else "Лайк додано! 💕 У вас матч!"
+            logger.info(f"✅ Фото додано для користувача {telegram_id}")
+            return True
             
         except Exception as e:
-            logger.error(f"❌ Помилка додавання лайку: {e}")
-            return False, "Помилка додавання лайку"
-
-    def get_user_matches(self, telegram_id):
-        """Отримання матчів користувача"""
-        try:
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            if not user:
-                return []
-            
-            self.cursor.execute('''
-                SELECT DISTINCT u.* FROM users u
-                JOIN matches m ON (u.id = m.user1_id OR u.id = m.user2_id)
-                WHERE (m.user1_id = %s OR m.user2_id = %s) AND u.id != %s
-            ''', (user['id'], user['id'], user['id']))
-            
-            matches = self.cursor.fetchall()
-            return matches
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання матчів: {e}")
-            return []
-
-    def get_top_users_by_rating(self, limit=10, gender=None):
-        """Отримання топу користувачів за рейтингом"""
-        try:
-            query = '''
-                SELECT * FROM users 
-                WHERE is_banned = FALSE AND age IS NOT NULL AND has_photo = TRUE
-            '''
-            params = []
-            
-            if gender:
-                query += ' AND gender = %s'
-                params.append(gender)
-                
-            query += ' ORDER BY rating DESC, likes_count DESC LIMIT %s'
-            params.append(limit)
-            
-            self.cursor.execute(query, params)
-            users = self.cursor.fetchall()
-            
-            return users
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання топу за рейтингом: {e}")
-            return []
-
-    def get_user_likers(self, telegram_id):
-        """Отримати список користувачів, які лайкнули поточного користувача"""
-        try:
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            if not user:
-                return []
-            
-            self.cursor.execute('''
-                SELECT u.* FROM users u
-                JOIN likes l ON u.id = l.from_user_id
-                JOIN users target ON target.id = l.to_user_id
-                WHERE target.telegram_id = %s AND u.telegram_id != %s
-            ''', (telegram_id, telegram_id))
-            
-            likers = self.cursor.fetchall()
-            return likers
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання лайкерів: {e}")
-            return []
-
-    def has_liked(self, from_user_id, to_user_id):
-        """Перевірити чи поставив користувач лайк іншому користувачу"""
-        try:
-            self.cursor.execute('''
-                SELECT l.id FROM likes l
-                JOIN users u1 ON u1.id = l.from_user_id
-                JOIN users u2 ON u2.id = l.to_user_id
-                WHERE u1.telegram_id = %s AND u2.telegram_id = %s
-            ''', (from_user_id, to_user_id))
-            
-            result = self.cursor.fetchone()
-            return result is not None
-        except Exception as e:
-            logger.error(f"❌ Помилка перевірки лайку: {e}")
+            logger.error(f"❌ Помилка додавання фото для {telegram_id}: {e}")
+            self.conn.rollback()
             return False
 
-    def get_statistics(self):
-        """Отримання статистики"""
+    def get_profile_photos(self, telegram_id):
+        """Отримання фото профілю"""
         try:
-            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = %s AND age IS NOT NULL', ('male',))
-            male = self.cursor.fetchone()['count']
-            
-            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = %s AND age IS NOT NULL', ('female',))
-            female = self.cursor.fetchone()['count']
-            
-            self.cursor.execute('SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND has_photo = TRUE')
-            total_active = self.cursor.fetchone()['count']
-            
-            self.cursor.execute('SELECT goal, COUNT(*) FROM users WHERE goal IS NOT NULL GROUP BY goal')
-            goals_stats = self.cursor.fetchall()
-            
-            return male, female, total_active, goals_stats
+            self.cursor.execute('''
+                SELECT p.file_id FROM photos p
+                JOIN users u ON p.user_id = u.id
+                WHERE u.telegram_id = %s
+                ORDER BY p.is_main DESC, p.created_at ASC
+            ''', (telegram_id,))
+            photos = self.cursor.fetchall()
+            return [photo['file_id'] for photo in photos]
         except Exception as e:
-            logger.error(f"❌ Помилка отримання статистики: {e}")
-            return 0, 0, 0, []
+            logger.error(f"❌ Помилка отримання фото для {telegram_id}: {e}")
+            return []
+
+    def get_main_photo(self, telegram_id):
+        """Отримання головного фото"""
+        try:
+            photos = self.get_profile_photos(telegram_id)
+            return photos[0] if photos else None
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання головного фото для {telegram_id}: {e}")
+            return None
 
     def get_users_count(self):
         """Отримання загальної кількості користувачів"""
         try:
             self.cursor.execute('SELECT COUNT(*) FROM users')
-            return self.cursor.fetchone()['count']
+            result = self.cursor.fetchone()
+            return result['count'] if result else 0
         except Exception as e:
             logger.error(f"❌ Помилка отримання кількості користувачів: {e}")
             return 0
 
-    def get_all_users(self):
-        """Отримання всіх користувачів"""
+    def get_statistics(self):
+        """Отримання статистики"""
         try:
-            self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
-            users = self.cursor.fetchall()
-            return users
+            # Кількість чоловіків
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = %s AND is_banned = FALSE', ('male',))
+            male_count = self.cursor.fetchone()['count']
+            
+            # Кількість жінок
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE gender = %s AND is_banned = FALSE', ('female',))
+            female_count = self.cursor.fetchone()['count']
+            
+            # Загальна кількість активних користувачів
+            self.cursor.execute('SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND is_banned = FALSE')
+            total_active = self.cursor.fetchone()['count']
+            
+            # Статистика цілей
+            self.cursor.execute('SELECT goal, COUNT(*) FROM users WHERE goal IS NOT NULL AND is_banned = FALSE GROUP BY goal')
+            goals_stats = self.cursor.fetchall()
+            
+            return male_count, female_count, total_active, goals_stats
+            
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувачів: {e}")
-            return []
+            logger.error(f"❌ Помилка отримання статистики: {e}")
+            return 0, 0, 0, []
 
-    def get_banned_users(self):
-        """Отримання заблокованих користувачів"""
+    def get_random_user(self, exclude_telegram_id):
+        """Отримання випадкового користувача"""
         try:
-            self.cursor.execute('SELECT * FROM users WHERE is_banned = TRUE')
-            return self.cursor.fetchall()
+            self.cursor.execute('''
+                SELECT u.* FROM users u
+                WHERE u.telegram_id != %s 
+                AND u.age IS NOT NULL 
+                AND u.gender IS NOT NULL
+                AND u.is_banned = FALSE
+                ORDER BY RANDOM()
+                LIMIT 1
+            ''', (exclude_telegram_id,))
+            return self.cursor.fetchone()
         except Exception as e:
-            logger.error(f"❌ Помилка отримання заблокованих: {e}")
-            return []
+            logger.error(f"❌ Помилка отримання випадкового користувача: {e}")
+            return None
 
-    def get_all_active_users(self, exclude_user_id=None):
+    def get_all_active_users(self, exclude_telegram_id=None):
         """Отримання всіх активних користувачів"""
         try:
-            if exclude_user_id:
+            if exclude_telegram_id:
                 self.cursor.execute('''
                     SELECT * FROM users 
-                    WHERE age IS NOT NULL AND has_photo = TRUE AND is_banned = FALSE AND telegram_id != %s
-                    ORDER BY last_active DESC
-                ''', (exclude_user_id,))
+                    WHERE telegram_id != %s 
+                    AND age IS NOT NULL 
+                    AND is_banned = FALSE
+                    ORDER BY created_at DESC
+                ''', (exclude_telegram_id,))
             else:
                 self.cursor.execute('''
                     SELECT * FROM users 
-                    WHERE age IS NOT NULL AND has_photo = TRUE AND is_banned = FALSE
-                    ORDER BY last_active DESC
+                    WHERE age IS NOT NULL 
+                    AND is_banned = FALSE
+                    ORDER BY created_at DESC
                 ''')
             return self.cursor.fetchall()
         except Exception as e:
             logger.error(f"❌ Помилка отримання активних користувачів: {e}")
             return []
 
-    def search_user(self, query):
-        """Пошук користувача за ID або іменем"""
+    def get_all_users(self):
+        """Отримання всіх користувачів"""
         try:
-            try:
-                user_id = int(query)
-                self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (user_id,))
-                result_by_id = self.cursor.fetchall()
-                if result_by_id:
-                    return result_by_id
-            except ValueError:
-                pass
-        
+            self.cursor.execute('SELECT * FROM users ORDER BY created_at DESC')
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання всіх користувачів: {e}")
+            return []
+
+    def get_banned_users(self):
+        """Отримання заблокованих користувачів"""
+        try:
+            self.cursor.execute('SELECT * FROM users WHERE is_banned = TRUE ORDER BY created_at DESC')
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання заблокованих користувачів: {e}")
+            return []
+
+    def ban_user(self, telegram_id):
+        """Блокування користувача"""
+        try:
+            self.cursor.execute('UPDATE users SET is_banned = TRUE WHERE telegram_id = %s', (telegram_id,))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Помилка блокування користувача {telegram_id}: {e}")
+            self.conn.rollback()
+            return False
+
+    def unban_user(self, telegram_id):
+        """Розблокування користувача"""
+        try:
+            self.cursor.execute('UPDATE users SET is_banned = FALSE WHERE telegram_id = %s', (telegram_id,))
+            self.conn.commit()
+            return self.cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Помилка розблокування користувача {telegram_id}: {e}")
+            self.conn.rollback()
+            return False
+
+    def search_user(self, query):
+        """Пошук користувача"""
+        try:
             self.cursor.execute('''
                 SELECT * FROM users 
-                WHERE first_name ILIKE %s OR username ILIKE %s
+                WHERE telegram_id::TEXT LIKE %s 
+                   OR username ILIKE %s 
+                   OR first_name ILIKE %s
                 ORDER BY created_at DESC
-            ''', (f'%{query}%', f'%{query}%'))
-        
-            results = self.cursor.fetchall()
-            return results
+            ''', (f'%{query}%', f'%{query}%', f'%{query}%'))
+            return self.cursor.fetchall()
         except Exception as e:
             logger.error(f"❌ Помилка пошуку користувача: {e}")
             return []
 
+    def add_like(self, from_user_id, to_user_id):
+        """Додавання лайку"""
+        try:
+            # Перевіряємо чи існують користувачі
+            from_user = self.get_user(from_user_id)
+            to_user = self.get_user(to_user_id)
+            
+            if not from_user or not to_user:
+                return False, "Користувача не знайдено"
+            
+            # Додаємо лайк
+            self.cursor.execute('''
+                INSERT INTO likes (from_user_id, to_user_id)
+                VALUES ((SELECT id FROM users WHERE telegram_id = %s), 
+                       (SELECT id FROM users WHERE telegram_id = %s))
+                ON CONFLICT (from_user_id, to_user_id) DO NOTHING
+            ''', (from_user_id, to_user_id))
+            
+            self.conn.commit()
+            
+            if self.cursor.rowcount > 0:
+                # Оновлюємо кількість лайків
+                self.cursor.execute('''
+                    UPDATE users SET likes_count = likes_count + 1 
+                    WHERE telegram_id = %s
+                ''', (to_user_id,))
+                self.conn.commit()
+                
+                return True, "Лайк додано"
+            else:
+                return False, "Лайк вже поставлено"
+                
+        except Exception as e:
+            logger.error(f"❌ Помилка додавання лайку: {e}")
+            self.conn.rollback()
+            return False, "Помилка додавання лайку"
+
+    def has_liked(self, from_user_id, to_user_id):
+        """Перевірка чи користувач вже лайкнув"""
+        try:
+            self.cursor.execute('''
+                SELECT 1 FROM likes 
+                WHERE from_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                AND to_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+            ''', (from_user_id, to_user_id))
+            return self.cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ Помилка перевірки лайку: {e}")
+            return False
+
+    def get_user_matches(self, telegram_id):
+        """Отримання матчів користувача"""
+        try:
+            self.cursor.execute('''
+                SELECT u.* FROM users u
+                WHERE u.id IN (
+                    SELECT l1.from_user_id FROM likes l1
+                    JOIN likes l2 ON l1.from_user_id = l2.to_user_id AND l1.to_user_id = l2.from_user_id
+                    WHERE l1.to_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                )
+                OR u.id IN (
+                    SELECT l2.to_user_id FROM likes l1
+                    JOIN likes l2 ON l1.from_user_id = l2.to_user_id AND l1.to_user_id = l2.from_user_id
+                    WHERE l1.from_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                )
+            ''', (telegram_id, telegram_id))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання матчів: {e}")
+            return []
+
+    def get_user_likers(self, telegram_id):
+        """Отримання тих, хто лайкнув користувача"""
+        try:
+            self.cursor.execute('''
+                SELECT u.* FROM users u
+                JOIN likes l ON u.id = l.from_user_id
+                WHERE l.to_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+            ''', (telegram_id,))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання лайкерів: {e}")
+            return []
+
+    def add_profile_view(self, viewer_id, viewed_id):
+        """Додавання перегляду профілю"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO profile_views (viewer_user_id, viewed_user_id)
+                VALUES ((SELECT id FROM users WHERE telegram_id = %s), 
+                       (SELECT id FROM users WHERE telegram_id = %s))
+            ''', (viewer_id, viewed_id))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка додавання перегляду: {e}")
+            self.conn.rollback()
+            return False
+
+    def get_profile_views(self, telegram_id):
+        """Отримання переглядів профілю"""
+        try:
+            self.cursor.execute('''
+                SELECT u.* FROM users u
+                JOIN profile_views pv ON u.id = pv.viewer_user_id
+                WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                ORDER BY pv.viewed_at DESC
+            ''', (telegram_id,))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання переглядів: {e}")
+            return []
+
+    def get_top_users_by_rating(self, limit=10, gender=None):
+        """Отримання топу користувачів за рейтингом"""
+        try:
+            if gender:
+                self.cursor.execute('''
+                    SELECT * FROM users 
+                    WHERE gender = %s AND age IS NOT NULL AND is_banned = FALSE
+                    ORDER BY rating DESC, likes_count DESC
+                    LIMIT %s
+                ''', (gender, limit))
+            else:
+                self.cursor.execute('''
+                    SELECT * FROM users 
+                    WHERE age IS NOT NULL AND is_banned = FALSE
+                    ORDER BY rating DESC, likes_count DESC
+                    LIMIT %s
+                ''', (limit,))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка отримання топу: {e}")
+            return []
+
+    def calculate_user_rating(self, telegram_id):
+        """Розрахунок рейтингу користувача"""
+        try:
+            # Простий розрахунок рейтингу
+            user = self.get_user(telegram_id)
+            if not user:
+                return 5.0
+            
+            base_rating = 5.0
+            # Бонуси за заповненість профілю
+            if user.get('age'):
+                base_rating += 0.5
+            if user.get('bio') and len(user.get('bio', '')) > 20:
+                base_rating += 0.5
+            if user.get('has_photo'):
+                base_rating += 1.0
+            
+            # Бонус за лайки
+            likes_bonus = min(user.get('likes_count', 0) * 0.1, 2.0)
+            base_rating += likes_bonus
+            
+            # Обмежуємо рейтинг
+            final_rating = min(max(base_rating, 1.0), 10.0)
+            
+            # Оновлюємо рейтинг в базі
+            self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (final_rating, telegram_id))
+            self.conn.commit()
+            
+            return final_rating
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
+            return 5.0
+
+    def update_all_ratings(self):
+        """Оновлення всіх рейтингів"""
+        try:
+            users = self.get_all_active_users()
+            for user in users:
+                self.calculate_user_rating(user['telegram_id'])
+            logger.info("✅ Всі рейтинги оновлено")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка оновлення рейтингів: {e}")
+            return False
+
     def cleanup_old_data(self):
         """Очищення старих даних"""
         try:
-            self.cursor.execute('''
-                DELETE FROM users 
-                WHERE age IS NULL AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
-            ''')
-            
+            # Видаляємо дублікати лайків
             self.cursor.execute('''
                 DELETE FROM likes 
-                WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '90 days'
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM likes 
+                    GROUP BY from_user_id, to_user_id
+                )
+            ''')
+            
+            # Видаляємо дублікати матчів
+            self.cursor.execute('''
+                DELETE FROM matches 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM matches 
+                    GROUP BY user1_id, user2_id
+                )
             ''')
             
             self.conn.commit()
@@ -738,246 +658,29 @@ class Database:
             return True
         except Exception as e:
             logger.error(f"❌ Помилка очищення даних: {e}")
-            return False
-
-    def ban_user(self, telegram_id):
-        """Заблокувати користувача"""
-        try:
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            
-            if not user:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено для блокування")
-                return False
-            
-            self.cursor.execute('UPDATE users SET is_banned = TRUE WHERE telegram_id = %s', (telegram_id,))
-            self.conn.commit()
-            logger.info(f"✅ Користувач {telegram_id} заблокований")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка блокування користувача {telegram_id}: {e}")
-            return False
-
-    def unban_user(self, telegram_id):
-        """Розблокувати користувача"""
-        try:
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            
-            if not user:
-                logger.error(f"❌ Користувача {telegram_id} не знайдено для розблокування")
-                return False
-            
-            self.cursor.execute('UPDATE users SET is_banned = FALSE WHERE telegram_id = %s', (telegram_id,))
-            self.conn.commit()
-            logger.info(f"✅ Користувач {telegram_id} розблокований")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка розблокування користувача {telegram_id}: {e}")
-            return False
-
-    def unban_all_users(self):
-        """Розблокувати всіх користувачів"""
-        try:
-            self.cursor.execute('UPDATE users SET is_banned = FALSE WHERE is_banned = TRUE')
-            self.conn.commit()
-            logger.info("✅ Всі користувачі розблоковані")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка розблокування всіх користувачів: {e}")
-            return False
-
-    def get_user_by_id(self, telegram_id):
-        """Отримати користувача за telegram_id"""
-        try:
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            if user:
-                return dict(user)
-            return None
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання користувача: {e}")
-            return None
-
-    def update_user_name(self, telegram_id, first_name):
-        """Оновити ім'я користувача"""
-        try:
-            self.cursor.execute('''
-                UPDATE users SET first_name = %s WHERE telegram_id = %s
-            ''', (first_name, telegram_id))
-            self.conn.commit()
-            logger.info(f"✅ Ім'я оновлено для {telegram_id}: {first_name}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення імені: {e}")
-            return False
-
-    def add_profile_view(self, viewer_id, viewed_user_id):
-        """Додати запис про перегляд профілю"""
-        try:
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (viewer_id,))
-            viewer = self.cursor.fetchone()
-            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (viewed_user_id,))
-            viewed = self.cursor.fetchone()
-            
-            if viewer and viewed:
-                self.cursor.execute('''
-                    INSERT INTO profile_views (viewer_id, viewed_user_id)
-                    VALUES (%s, %s)
-                ''', (viewer['id'], viewed['id']))
-                self.conn.commit()
-                return True
-        except Exception as e:
-            logger.error(f"❌ Помилка додавання перегляду: {e}")
-        return False
-
-    def debug_user_profile(self, telegram_id):
-        """Відладка профілю користувача"""
-        try:
-            self.cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
-            user = self.cursor.fetchone()
-            
-            if user:
-                logger.info(f"🔍 [DEBUG USER] ID: {user['telegram_id']}")
-                logger.info(f"🔍 [DEBUG USER] Ім'я: {user['first_name']}")
-                logger.info(f"🔍 [DEBUG USER] Вік: {user['age']}")
-                logger.info(f"🔍 [DEBUG USER] Стать: {user['gender']}")
-                logger.info(f"🔍 [DEBUG USER] Місто: {user['city']}")
-                logger.info(f"🔍 [DEBUG USER] Фото: {user['has_photo']}")
-                logger.info(f"🔍 [DEBUG USER] Лайків: {user['likes_count']}")
-                logger.info(f"🔍 [DEBUG USER] Рейтинг: {user['rating']}")
-                logger.info(f"🔍 [DEBUG USER] Заблокований: {user['is_banned']}")
-                return True
-            else:
-                logger.info(f"🔍 [DEBUG USER] Користувача {telegram_id} не знайдено")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Помилка відладки: {e}")
-            return False
-
-    def calculate_user_rating(self, user_id):
-        """Розрахунок рейтингу користувача"""
-        try:
-            user = self.get_user(user_id)
-            if not user:
-                return 5.0
-            
-            base_rating = 5.0
-            bonus = 0.0
-            
-            if user.get('has_photo'):
-                bonus += 1.0
-            
-            if user.get('bio') and len(user.get('bio', '')) > 20:
-                bonus += 1.0
-            
-            likes_count = user.get('likes_count', 0)
-            bonus += min(likes_count * 0.1, 3.0)
-            
-            if user.get('last_active'):
-                try:
-                    last_active = user['last_active']
-                    if isinstance(last_active, str):
-                        last_active = datetime.fromisoformat(last_active.replace('Z', '+00:00'))
-                    
-                    days_since_active = (datetime.now().replace(tzinfo=last_active.tzinfo) - last_active).days
-                    if days_since_active <= 7:
-                        bonus += 0.5
-                except:
-                    pass
-            
-            final_rating = min(base_rating + bonus, 10.0)
-            return round(final_rating, 1)
-        except Exception as e:
-            logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
-            return 5.0
-
-    def update_all_ratings(self):
-        """Оновити рейтинги всіх користувачів"""
-        try:
-            self.cursor.execute('SELECT telegram_id FROM users WHERE age IS NOT NULL')
-            users = self.cursor.fetchall()
-            
-            updated_count = 0
-            for user in users:
-                telegram_id = user['telegram_id']
-                new_rating = self.calculate_user_rating(telegram_id)
-                self.cursor.execute('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id))
-                updated_count += 1
-            
-            self.conn.commit()
-            logger.info(f"✅ Оновлено рейтинги для {updated_count} користувачів")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Помилка оновлення рейтингів: {e}")
+            self.conn.rollback()
             return False
 
     def reset_database(self):
-        """Скидання бази даних (для адміна)"""
+        """Скидання бази даних"""
         try:
-            logger.info("🔄 Скидання бази даних...")
-            
             # Видаляємо всі таблиці
-            self.cursor.execute('DROP TABLE IF EXISTS likes CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS matches CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS photos CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS profile_views CASCADE')
-            self.cursor.execute('DROP TABLE IF EXISTS users CASCADE')
+            tables = ['profile_views', 'matches', 'likes', 'photos', 'users']
+            for table in tables:
+                self.cursor.execute(f'DROP TABLE IF EXISTS {table} CASCADE')
             
             self.conn.commit()
             
-            # Перестворюємо таблиці
+            # Повторно ініціалізуємо базу
             self.init_db()
+            self.update_database_structure()
             
             logger.info("✅ База даних скинута та перестворена")
             return True
         except Exception as e:
-            logger.error(f"❌ Помилка скидання БД: {e}")
+            logger.error(f"❌ Помилка скидання бази даних: {e}")
             self.conn.rollback()
             return False
 
-    def get_profile_views(self, telegram_id):
-        """Отримати список користувачів, які переглядали профіль"""
-        try:
-            self.cursor.execute('''
-                SELECT u.* FROM users u
-                JOIN profile_views pv ON u.id = pv.viewer_id
-                JOIN users target ON target.id = pv.viewed_user_id
-                WHERE target.telegram_id = %s AND u.telegram_id != %s
-                ORDER BY pv.viewed_at DESC
-            ''', (telegram_id, telegram_id))
-        
-            viewers = self.cursor.fetchall()
-            return viewers
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання переглядів: {e}")
-            return [] 
-
-    def update_or_create_user_profile(self, telegram_id, age=None, gender=None, city=None, 
-                                seeking_gender=None, goal=None, bio=None):
-    """Оновлення або створення профілю користувача"""
-    try:
-        # Спочатку перевіряємо чи існує користувач
-        self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
-        user = self.cursor.fetchone()
-        
-        if not user:
-            logger.info(f"🔄 Користувача {telegram_id} не знайдено, створюємо...")
-            # Створюємо користувача з базовими даними
-            from telegram import User
-            # Тут потрібно отримати username та first_name з контексту
-            # Для тесту використовуємо тимчасові значення
-            success = self.add_user(telegram_id, "username", "User")
-            if not success:
-                logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
-                return False
-        
-        # Тепер оновлюємо профіль
-        return self.update_user_profile(telegram_id, age, gender, city, seeking_gender, goal, bio)
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка в update_or_create_user_profile: {e}")
-        return False               
-
-# Глобальний екземпляр бази даних
+# Глобальний об'єкт бази даних
 db = Database()
