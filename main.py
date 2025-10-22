@@ -1018,11 +1018,38 @@ init_check_thread.start()
 
 # ==================== SERVER STARTUP ====================
 
+def create_app():
+    """Створення Flask додатку"""
+    return app
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print("=" * 50)
-    print(f"🌐 Запуск Flask сервера на порті {port}...")
-    print("🤖 Бот готовий до роботи!")
-    print("=" * 50)
     
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print("=" * 60)
+    print(f"🌐 ЗАПУСК СЕРВЕРА НА ПОРТІ: {port}")
+    print(f"🔗 URL: http://0.0.0.0:{port}")
+    print("🤖 БОТ ГОТОВИЙ ДО РОБОТИ!")
+    print("=" * 60)
+    
+    # Запускаємо сервер
+    try:
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=False,
+            use_reloader=False
+        )
+    except Exception as e:
+        print(f"❌ Помилка запуску: {e}")
+        # Резервний порт
+        try:
+            port = 5000
+            print(f"🔄 Спробую порт {port}...")
+            app.run(
+                host='0.0.0.0',
+                port=port,
+                debug=False,
+                use_reloader=False
+            )
+        except Exception as e2:
+            print(f"❌ Критична помилка: {e2}")
