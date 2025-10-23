@@ -1,13 +1,9 @@
 import logging
 import os
 import asyncio
-import threading
-import time
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-import urllib.request
-import json
 from handlers.profile import start_edit_profile
 
 # Налаштування логування
@@ -46,21 +42,6 @@ WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 PORT = int(os.environ.get('PORT', 10000))
 application = None
 bot_initialized = False
-event_loop = None
-
-def keep_alive():
-    """Функція для підтримки активності додатку"""
-    while True:
-        try:
-            with urllib.request.urlopen('https://chatrix-bot-4m1p.onrender.com/health', timeout=5) as response:
-                if response.getcode() == 200:
-                    logger.info(f"🔄 Keep-alive: {response.getcode()}")
-                else:
-                    logger.warning(f"⚠️ Keep-alive: {response.getcode()}")
-        except Exception as e:
-            logger.error(f"❌ Keep-alive помилка: {e}")
-        
-        time.sleep(120)
 
 async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Детальна відладка бота"""
@@ -734,10 +715,6 @@ if __name__ == '__main__':
     print(f"🌐 Запуск сервера на порті {port}...")
     print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
-    
-    # Запускаємо keep-alive в окремому потоці
-    keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-    keep_alive_thread.start()
     
     # Запускаємо Flask сервер
     app.run(host='0.0.0.0', port=port, debug=False)
