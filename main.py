@@ -586,43 +586,22 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
-async def process_update(update):
-    """Обробка оновлення з таймаутом"""
-    try:
-        await asyncio.wait_for(application.process_update(update), timeout=25.0)
-        logger.info(f"✅ Оновлення успішно оброблено: {update.update_id}")
-    except asyncio.TimeoutError:
-        logger.error(f"❌ Таймаут обробки оновлення: {update.update_id}")
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки оновлення: {e}")
-
-def init_bot_simple():
-    """Проста ініціалізація бота без блокування"""
-    global application, bot_initialized, event_loop
+def init_bot():
+    """Ініціалізація бота"""
+    global application, bot_initialized
     
     if bot_initialized:
+        logger.info("✅ Бот вже ініціалізовано")
         return True
         
     try:
-        from config import TOKEN
+        logger.info("🔄 Ініціалізація бота...")
         
-        # Створюємо event loop
-        event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(event_loop)
-        
-        # Запускаємо event loop в окремому потоці
-        def run_event_loop():
-            asyncio.set_event_loop(event_loop)
-            event_loop.run_forever()
-        
-        event_thread = threading.Thread(target=run_event_loop, daemon=True)
-        event_thread.start()
-        
-        # Швидка ініціалізація
+        # Створюємо додаток
         application = Application.builder().token(TOKEN).build()
         
-        # Мінімальні обробники
-        setup_handlers_simple(application)
+        # Додаємо обробники
+        setup_handlers(application)
         
         # Ініціалізуємо
         application.initialize()
@@ -630,21 +609,18 @@ def init_bot_simple():
         # Встановлюємо вебхук
         application.bot.set_webhook(WEBHOOK_URL)
         
-        # Запускаємо keep-alive
-        keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-        keep_alive_thread.start()
-        
         bot_initialized = True
-        logger.info("✅ Бот швидко ініціалізовано")
+        logger.info("✅ Бот успішно ініціалізовано!")
+        logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації: {e}")
+        logger.error(f"❌ Помилка ініціалізації бота: {e}")
         return False
 
-def setup_handlers_simple(application):
-    """Мінімальне налаштування обробників"""
-    logger.info("🔄 Налаштування основних обробників...")
+def setup_handlers(application):
+    """Налаштування обробників"""
+    logger.info("🔄 Налаштування обробників...")
     
     # Основні команди
     application.add_handler(CommandHandler("start", start))
@@ -675,7 +651,7 @@ def setup_handlers_simple(application):
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
 
     application.add_error_handler(error_handler)
-    logger.info("✅ Основні обробники налаштовано")
+    logger.info("✅ Обробники налаштовано")
 
 # ==================== FLASK ROUTES ====================
 
@@ -693,26 +669,26 @@ def ping():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook для Telegram з відкладною ініціалізацією"""
+    """Webhook для Telegram"""
     global application, bot_initialized
     
     try:
-        # Ініціалізуємо бота при першому запиті
+        # Ініціалізуємо бота при першому запиті, якщо ще не ініціалізовано
         if not bot_initialized:
             logger.info("🔄 Ініціалізація бота при першому запиті...")
-            init_bot_simple()
-            return "Bot initializing", 200
+            if not init_bot():
+                return "Bot initialization failed", 500
             
         update_data = request.get_json()
         if update_data is None:
             return "Empty update data", 400
             
+        # Обробляємо оновлення
         update = Update.de_json(update_data, application.bot)
-        
-        # Обробляємо оновлення асинхронно
-        asyncio.run_coroutine_threadsafe(process_update(update), event_loop)
+        application.update_queue.put(update)
         
         return 'ok'
+        
     except Exception as e:
         logger.error(f"❌ Webhook помилка: {e}")
         return "Error", 200
@@ -759,7 +735,9 @@ if __name__ == '__main__':
     print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
     
-    # Ініціалізуємо бота при запуску
-    init_bot_simple()
+    # Запускаємо keep-alive в окремому потоці
+    keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
+    keep_alive_thread.start()
     
+    # Запускаємо Flask сервер
     app.run(host='0.0.0.0', port=port, debug=False)
