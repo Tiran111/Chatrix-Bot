@@ -219,24 +219,33 @@ class Database:
             self.conn.rollback()
             return False
 
-    def safe_update_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
-        """Безпечне оновлення профілю з автоматичним створенням користувача"""
+    def update_or_create_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
+        """Оновлення або створення профілю користувача"""
         try:
-            # Перевіряємо чи існує користувач, якщо ні - створюємо
-            user_data = self.get_user(telegram_id)
-            if not user_data:
+            # Спочатку перевіряємо чи існує користувач
+            user = self.get_user(telegram_id)
+            
+            if not user:
+                # Якщо користувача немає, створюємо його
                 logger.info(f"🔄 Користувача {telegram_id} не знайдено, створюємо...")
-                # Створюємо з мінімальними даними
                 success = self.add_user(telegram_id, "unknown", "User")
                 if not success:
                     logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
                     return False
             
             # Тепер оновлюємо профіль
-            return self.update_user_profile(telegram_id, age, gender, city, seeking_gender, goal, bio)
+            return self.update_user_profile(
+                telegram_id=telegram_id,
+                age=age,
+                gender=gender,
+                city=city,
+                seeking_gender=seeking_gender,
+                goal=goal,
+                bio=bio
+            )
             
         except Exception as e:
-            logger.error(f"❌ Помилка в safe_update_profile: {e}")
+            logger.error(f"❌ Помилка в update_or_create_user_profile: {e}")
             return False
 
     def get_user_profile(self, telegram_id):
@@ -681,6 +690,41 @@ class Database:
             logger.error(f"❌ Помилка скидання бази даних: {e}")
             self.conn.rollback()
             return False
+
+    def get_users_by_city(self, city, exclude_telegram_id):
+        """Отримання користувачів за містом"""
+        try:
+            self.cursor.execute('''
+                SELECT * FROM users 
+                WHERE city ILIKE %s 
+                AND telegram_id != %s 
+                AND age IS NOT NULL 
+                AND is_banned = FALSE
+                ORDER BY rating DESC
+            ''', (f'%{city}%', exclude_telegram_id))
+            return self.cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Помилка пошуку за містом {city}: {e}")
+            return []
+
+    def can_like_today(self, telegram_id):
+        """Перевірка чи може користувач ставити лайки сьогодні"""
+        try:
+            # Проста перевірка - можна ставити до 50 лайків на день
+            self.cursor.execute('''
+                SELECT COUNT(*) FROM likes 
+                WHERE from_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                AND DATE(created_at) = CURRENT_DATE
+            ''', (telegram_id,))
+            result = self.cursor.fetchone()
+            likes_today = result['count'] if result else 0
+            
+            if likes_today >= 50:
+                return False, f"Досягнуто ліміт лайків на сьогодні ({likes_today}/50)"
+            return True, f"Лайків сьогодні: {likes_today}/50"
+        except Exception as e:
+            logger.error(f"❌ Помилка перевірки лайків: {e}")
+            return True, "Ліміт не перевірено"
 
 # Глобальний об'єкт бази даних
 db = Database()

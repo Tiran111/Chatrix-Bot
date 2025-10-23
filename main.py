@@ -9,6 +9,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 from handlers.profile import start_edit_profile
+from handlers.profile import show_my_profile
 
 # Налаштування логування
 logging.basicConfig(
