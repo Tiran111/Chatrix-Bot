@@ -9,7 +9,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import urllib.request
 import json
 from handlers.profile import start_edit_profile
-from handlers.profile import show_my_profile
 
 # Налаштування логування
 logging.basicConfig(
@@ -751,7 +750,8 @@ print("=" * 60)
 
 # ==================== SERVER STARTUP ====================
 
-if __name__ == '__main__':
+def start_server():
+    """Запуск сервера з правильним портом"""
     port = int(os.environ.get('PORT', 10000))
     
     print("=" * 50)
@@ -759,4 +759,10 @@ if __name__ == '__main__':
     print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
     
+    # Ініціалізуємо бота при запуску сервера
+    init_bot_simple()
+    
     app.run(host='0.0.0.0', port=port, debug=False)
+
+if __name__ == '__main__':
+    start_server()
