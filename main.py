@@ -584,19 +584,47 @@ def init_bot():
         # Додаємо обробники
         setup_handlers(application)
         
-        # Ініціалізуємо
-        application.initialize()
-        
-        # Встановлюємо вебхук
-        application.bot.set_webhook(WEBHOOK_URL)
-        
         bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано!")
-        logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
+        logger.info(f"🌐 Вебхук буде встановлено при першому запиті: {WEBHOOK_URL}")
         return True
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        return False
+
+async def init_bot_async():
+    """Асинхронна ініціалізація бота"""
+    global application, bot_initialized
+    
+    if bot_initialized:
+        return True
+        
+    try:
+        logger.info("🔄 Асинхронна ініціалізація бота...")
+        
+        # Створюємо додаток
+        application = Application.builder().token(TOKEN).build()
+        
+        # Додаємо обробники
+        setup_handlers(application)
+        
+        # Ініціалізуємо
+        await application.initialize()
+        
+        # Встановлюємо вебхук
+        await application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Запускаємо бота
+        await application.start()
+        
+        bot_initialized = True
+        logger.info("✅ Бот успішно ініціалізовано асинхронно!")
+        logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка асинхронної ініціалізації бота: {e}")
         return False
 
 def setup_handlers(application):
@@ -617,7 +645,7 @@ def setup_handlers(application):
     application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
     application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
     application.add_handler(MessageHandler(filters.Regex('^❤️ Взаємний лайк$'), handle_like_back))
-    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: asyncio.create_task(update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id)))))
     application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
     application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
     application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
@@ -664,15 +692,24 @@ def webhook():
         if update_data is None:
             return "Empty update data", 400
             
-        # Обробляємо оновлення
+        # Обробляємо оновлення в окремому потоці
         update = Update.de_json(update_data, application.bot)
-        application.update_queue.put(update)
+        
+        # Використовуємо asyncio для обробки оновлення
+        asyncio.create_task(process_update(update))
         
         return 'ok'
         
     except Exception as e:
         logger.error(f"❌ Webhook помилка: {e}")
         return "Error", 200
+
+async def process_update(update):
+    """Асинхронна обробка оновлення"""
+    try:
+        await application.process_update(update)
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
@@ -715,6 +752,9 @@ if __name__ == '__main__':
     print(f"🌐 Запуск сервера на порті {port}...")
     print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
+    
+    # Ініціалізуємо бота
+    init_bot()
     
     # Запускаємо Flask сервер
     app.run(host='0.0.0.0', port=port, debug=False)
