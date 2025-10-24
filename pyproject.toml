@@ -10,12 +10,10 @@ authors = ["Your Name <your@email.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-python-telegram-bot = "^20.7"
-flask = "^2.3.3"
-psycopg2-binary = "^2.9.7"
-python-dotenv = "^1.0.0"
-
-[tool.poetry.dev-dependencies]
+python-telegram-bot = "20.7"
+flask = "2.3.3"
+psycopg2-binary = "2.9.7"
+gunicorn = "21.2.0"
 
 [tool.poetry.scripts]
 start = "main:app"
