@@ -4,7 +4,6 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-from handlers.profile import start_edit_profile
 
 # Налаштування логування
 logging.basicConfig(
@@ -25,8 +24,8 @@ except ImportError as e:
     raise
 
 try:
-    from config import ADMIN_ID
-    from config import TOKEN
+    from config import ADMIN_ID, TOKEN
+    logger.info("✅ Конфігурація завантажена")
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту конфігурації: {e}")
     raise
@@ -34,11 +33,12 @@ except ImportError as e:
 try:
     from keyboards.main_menu import get_main_menu
     from utils.states import user_states, States
+    logger.info("✅ Утиліти завантажено")
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту утиліт: {e}")
 
 # Глобальні змінні
-WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', "https://chatrix-bot-4m1p.onrender.com/webhook")
 PORT = int(os.environ.get('PORT', 10000))
 application = None
 bot_initialized = False
@@ -614,9 +614,6 @@ async def init_bot_async():
         
         # Встановлюємо вебхук
         await application.bot.set_webhook(WEBHOOK_URL)
-        
-        # Запускаємо бота
-        await application.start()
         
         bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано асинхронно!")
