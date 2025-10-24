@@ -1,10 +1,10 @@
 import logging
 import os
 import asyncio
-from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+import threading
+from flask import Flask, request, jsonify
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-from handlers.profile import start_edit_profile
 
 # Налаштування логування
 logging.basicConfig(
@@ -12,7 +12,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 app = Flask(__name__)
 
@@ -41,7 +40,9 @@ except ImportError as e:
 WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 PORT = int(os.environ.get('PORT', 10000))
 application = None
-bot_initialized = False
+bot_loop = None
+
+# ==================== ВАШ ОРИГІНАЛЬНИЙ КОД ====================
 
 async def debug_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Детальна відладка бота"""
@@ -112,17 +113,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"🆕 Користувач: {user.first_name} (ID: {user.id}) викликав /start")
         
-        db.add_user(user.id, user.username, user.first_name)
-        logger.info(f"✅ Користувач {user.id} доданий в базу")
-        
+        # Перевіряємо чи існує користувач, якщо ні - створюємо
+        existing_user = db.get_user(user.id)
+        if not existing_user:
+            db.add_user(user.id, user.username, user.first_name)
+            logger.info(f"✅ Користувач {user.id} доданий в базу")
+        else:
+            logger.info(f"✅ Користувач {user.id} вже існує в базі")
+    
+        # Скидаємо стан
         user_states[user.id] = States.START
         
+        # Вітання
         welcome_text = (
             f"👋 Вітаю, {user.first_name}!\n\n"
-            f"💞 *Chatrix* — це бот для знайомств!\n\n"
+            f"💞 *Chatrix* — це бот для знайомств, де ти можеш:\n\n"
+            f"• 📝 Створити свою анкету\n"
+            f"• 💕 Знаходити цікавих людей\n"
+            f"• ❤️ Ставити лайки та отримувати матчі\n"
+            f"• 🏆 Переглядати топ користувачів\n"
+            f"• 🏙️ Шукати за містом\n\n"
             f"🎯 *Почнімо знайомство!*"
         )
         
+        # Перевіряємо чи заповнений профіль
         user_data, is_complete = db.get_user_profile(user.id)
         
         if not is_complete:
@@ -146,7 +160,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
-        logger.info(f"✅ Відправлено вітальне повідомлення для {user.first_name}")
+        
+        print(f"✅ Стартове повідомлення відправлено для {user.first_name}")
         
     except Exception as e:
         logger.error(f"❌ Помилка в /start: {e}", exc_info=True)
@@ -547,7 +562,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
-            reply_markup=get_main_menu(user.id)
+                        reply_markup=get_main_menu(user.id)
         )
         
     except Exception as e:
@@ -558,12 +573,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu(user.id)
         )
 
-async def debug_webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Простий дебаг вебхука"""
-    user = update.effective_user
-    print(f"🔔 Отримано повідомлення від {user.id} - {user.first_name}")
-    await update.message.reply_text("🔔 Бот отримав ваше повідомлення!")        
-
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
@@ -573,14 +582,47 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
-def init_bot():
-    """Ініціалізація бота"""
-    global application, bot_initialized
+# ==================== СИСТЕМА ЗАПУСКУ ДЛЯ RENDER ====================
+
+def setup_handlers(app):
+    """Налаштування обробників"""
+    logger.info("🔄 Налаштування обробників...")
     
-    if bot_initialized:
-        logger.info("✅ Бот вже ініціалізовано")
-        return True
-        
+    # Основні команди
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("debug", debug_bot))
+    app.add_handler(CommandHandler("cancel", cancel_command))
+    app.add_handler(CommandHandler("reset_state", reset_state))
+    
+    # Основні обробники кнопок
+    app.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|📝 Редагувати)$'), start_profile_creation))
+    app.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
+    app.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
+    app.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
+    app.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
+    app.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
+    app.add_handler(MessageHandler(filters.Regex('^❤️ Взаємний лайк$'), handle_like_back))
+    app.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
+    app.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
+    app.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
+    app.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
+    app.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
+    app.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
+    
+    # Адмін обробники
+    app.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
+    
+    # Фото та універсальний обробник
+    app.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+
+    app.add_error_handler(error_handler)
+    logger.info("✅ Обробники налаштовано")
+
+async def init_bot():
+    """Ініціалізація бота"""
+    global application
+    
     try:
         logger.info("🔄 Ініціалізація бота...")
         
@@ -591,12 +633,11 @@ def init_bot():
         setup_handlers(application)
         
         # Ініціалізуємо
-        application.initialize()
+        await application.initialize()
         
         # Встановлюємо вебхук
-        application.bot.set_webhook(WEBHOOK_URL)
+        await application.bot.set_webhook(WEBHOOK_URL)
         
-        bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано!")
         logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
         return True
@@ -605,41 +646,44 @@ def init_bot():
         logger.error(f"❌ Помилка ініціалізації бота: {e}")
         return False
 
-def setup_handlers(application):
-    """Налаштування обробників"""
-    logger.info("🔄 Налаштування обробників...")
-    
-    # Основні команди
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, debug_webhook))
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("debug", debug_bot))
-    application.add_handler(CommandHandler("cancel", cancel_command))
-    application.add_handler(CommandHandler("reset_state", reset_state))
-    
-    # Основні обробники кнопок
-    application.add_handler(MessageHandler(filters.Regex('^(📝 Заповнити профіль|📝 Редагувати)$'), start_profile_creation))
-    application.add_handler(MessageHandler(filters.Regex('^👤 Мій профіль$'), show_my_profile))
-    application.add_handler(MessageHandler(filters.Regex('^💕 Пошук анкет$'), search_profiles))
-    application.add_handler(MessageHandler(filters.Regex('^🏙️ По місту$'), search_by_city))
-    application.add_handler(MessageHandler(filters.Regex('^➡️ Далі$'), show_next_profile))
-    application.add_handler(MessageHandler(filters.Regex('^❤️ Лайк$'), handle_like))
-    application.add_handler(MessageHandler(filters.Regex('^❤️ Взаємний лайк$'), handle_like_back))
-    application.add_handler(MessageHandler(filters.Regex('^🔙 Меню$'), lambda update, context: update.message.reply_text("👋 Повертаємось до меню", reply_markup=get_main_menu(update.effective_user.id))))
-    application.add_handler(MessageHandler(filters.Regex('^🏆 Топ$'), show_top_users))
-    application.add_handler(MessageHandler(filters.Regex('^💌 Мої матчі$'), show_matches))
-    application.add_handler(MessageHandler(filters.Regex('^❤️ Хто мене лайкнув$'), show_likes))
-    application.add_handler(MessageHandler(filters.Regex('^(👨 Топ чоловіків|👩 Топ жінок|🏆 Загальний топ)$'), handle_top_selection))
-    application.add_handler(MessageHandler(filters.Regex("^👨‍💼 Зв'язок з адміном$"), contact_admin))
-    
-    # Адмін обробники
-    application.add_handler(MessageHandler(filters.Regex('^(👑 Адмін панель|📊 Статистика|👥 Користувачі|📢 Розсилка|🔄 Оновити базу|🚫 Блокування)$'), handle_admin_actions))
-    
-    # Фото та універсальний обробник
-    application.add_handler(MessageHandler(filters.PHOTO, handle_main_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, universal_handler))
+def process_update_safe(update_data):
+    """Безпечна обробка оновлення"""
+    try:
+        # Створюємо оновлення
+        update = Update.de_json(update_data, application.bot)
+        
+        # Використовуємо основний event loop бота
+        future = asyncio.run_coroutine_threadsafe(
+            application.process_update(update), 
+            bot_loop
+        )
+        future.result(timeout=10)  # Чекаємо до 10 секунд
+        
+        logger.info("✅ Оновлення успішно оброблено")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
+        return False
 
-    application.add_error_handler(error_handler)
-    logger.info("✅ Обробники налаштовано")
+def run_bot_in_thread():
+    """Запуск бота в окремому потоці"""
+    global bot_loop
+    try:
+        bot_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(bot_loop)
+        
+        # Ініціалізація бота
+        success = bot_loop.run_until_complete(init_bot())
+        if not success:
+            logger.error("❌ Не вдалося ініціалізувати бота")
+            return
+        
+        logger.info("🔄 Бот запущено в потоці")
+        bot_loop.run_forever()
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в потоці бота: {e}")
 
 # ==================== FLASK ROUTES ====================
 
@@ -658,28 +702,66 @@ def ping():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook для Telegram"""
-    global application, bot_initialized
+    global application
     
     try:
-        # Ініціалізуємо бота при першому запиті, якщо ще не ініціалізовано
-        if not bot_initialized:
-            logger.info("🔄 Ініціалізація бота при першому запиті...")
-            if not init_bot():
-                return "Bot initialization failed", 500
+        if not application:
+            return "Bot not initialized", 500
             
         update_data = request.get_json()
         if update_data is None:
             return "Empty update data", 400
             
-        # Обробляємо оновлення
-        update = Update.de_json(update_data, application.bot)
-        application.update_queue.put(update)
+        logger.info(f"📨 Отримано вебхук від Telegram")
         
-        return 'ok'
+        # Обробляємо оновлення безпечно
+        success = process_update_safe(update_data)
+        
+        if success:
+            return 'ok'
+        else:
+            return "Error processing update", 500
         
     except Exception as e:
         logger.error(f"❌ Webhook помилка: {e}")
         return "Error", 200
+
+@app.route('/set_webhook')
+def set_webhook_route():
+    """Встановити вебхук вручну"""
+    try:
+        import urllib.request
+        import json
+        import urllib.parse
+        
+        webhook_url = "https://chatrix-bot-4m1p.onrender.com/webhook"
+        url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
+        
+        # Створюємо POST запит
+        data = urllib.parse.urlencode({"url": webhook_url}).encode()
+        req = urllib.request.Request(url, data=data, method='POST')
+        
+        # Виконуємо запит
+        with urllib.request.urlopen(req) as response:
+            result = json.loads(response.read().decode())
+            return jsonify({"status": "success", "result": result})
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/check_webhook')
+def check_webhook():
+    """Перевірити стан вебхука"""
+    try:
+        import urllib.request
+        import json
+        
+        url = f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo"
+        with urllib.request.urlopen(url) as response:
+            result = json.loads(response.read().decode())
+            return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
@@ -713,45 +795,21 @@ print(f"🌐 Порт: {PORT}")
 print("📱 Бот ініціалізується при першому запиті")
 print("=" * 60)
 
-def check_database_status():
-    """Перевірка стану бази даних"""
-    try:
-        # Перевірка таблиць
-        tables = ['users', 'photos', 'likes', 'matches']
-        for table in tables:
-            db.cursor.execute(f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table}')")
-            exists = db.cursor.fetchone()['exists']
-            print(f"📊 Таблиця {table}: {'✅' if exists else '❌'}")
-        
-        # Перевірка користувачів
-        user_count = db.get_users_count()
-        print(f"👥 Користувачів в базі: {user_count}")
-        
-        # Перевірка активних користувачів
-        stats = db.get_statistics()
-        print(f"📈 Активних: {stats[2]}")
-        
-        return user_count > 0
-    except Exception as e:
-        print(f"❌ Помилка перевірки БД: {e}")
-        return False
-
 # ==================== SERVER STARTUP ====================
 
+def main():
+    """Запуск програми"""
+    # Запускаємо бота в окремому потоці
+    bot_thread = threading.Thread(target=run_bot_in_thread, daemon=True)
+    bot_thread.start()
+    
+    # Чекаємо трохи на ініціалізацію бота
+    import time
+    time.sleep(3)
+    
+    # Запуск Flask сервера
+    logger.info(f"🚀 Запуск сервера на порті {PORT}")
+    app.run(host='0.0.0.0', port=PORT, debug=False)
+
 if __name__ == '__main__':
-    print("=" * 50)
-    print("🚀 Запуск Chatrix Bot...")
-    print("=" * 50)
-    
-    # Ініціалізація бота
-    print("🔧 Ініціалізація бота...")
-    if init_bot():
-        print("✅ Бот успішно ініціалізовано")
-    else:
-        print("❌ Помилка ініціалізації бота")
-    
-    # Запуск сервера на правильному порті
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Запуск сервера на порті {port}")
-    
-    app.run(host='0.0.0.0', port=port, debug=False)
+    main()
