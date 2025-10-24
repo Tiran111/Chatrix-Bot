@@ -706,6 +706,29 @@ print(f"🌐 Порт: {PORT}")
 print("📱 Бот ініціалізується при першому запиті")
 print("=" * 60)
 
+def check_database_status():
+    """Перевірка стану бази даних"""
+    try:
+        # Перевірка таблиць
+        tables = ['users', 'photos', 'likes', 'matches']
+        for table in tables:
+            db.cursor.execute(f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table}')")
+            exists = db.cursor.fetchone()['exists']
+            print(f"📊 Таблиця {table}: {'✅' if exists else '❌'}")
+        
+        # Перевірка користувачів
+        user_count = db.get_users_count()
+        print(f"👥 Користувачів в базі: {user_count}")
+        
+        # Перевірка активних користувачів
+        stats = db.get_statistics()
+        print(f"📈 Активних: {stats[2]}")
+        
+        return user_count > 0
+    except Exception as e:
+        print(f"❌ Помилка перевірки БД: {e}")
+        return False
+
 # ==================== SERVER STARTUP ====================
 
 if __name__ == '__main__':
