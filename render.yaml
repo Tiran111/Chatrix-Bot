@@ -7,10 +7,8 @@ services:
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        value: your_bot_token_here
       - key: ADMIN_ID
-        sync: false
+        value: your_admin_id_here
       - key: DATABASE_URL
-        fromDatabase:
-          name: chatrix-db
-          property: connectionString
+        value: your_database_url_here
