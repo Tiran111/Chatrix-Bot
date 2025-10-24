@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import urllib.request
 import json
+import threading
 
 # Налаштування
 logging.basicConfig(level=logging.INFO)
@@ -16,10 +17,11 @@ app = Flask(__name__)
 
 # Глобальні змінні
 application = None
+bot_loop = None
 
 async def init_bot():
     """Ініціалізація бота"""
-    global application
+    global application, bot_loop
     try:
         application = Application.builder().token(TOKEN).build()
         
@@ -50,6 +52,46 @@ async def start(update: Update, context):
 async def echo(update: Update, context):
     """Ехо-обробник"""
     await update.message.reply_text(f"📝 Ви написали: {update.message.text}")
+
+def run_bot_in_thread():
+    """Запуск бота в окремому потоці"""
+    global bot_loop
+    try:
+        bot_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(bot_loop)
+        
+        # Ініціалізація бота
+        success = bot_loop.run_until_complete(init_bot())
+        if not success:
+            logger.error("❌ Не вдалося ініціалізувати бота")
+            return
+        
+        # Запускаємо бота
+        logger.info("🔄 Бот запущено в потоці")
+        bot_loop.run_forever()
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в потоці бота: {e}")
+
+def process_update_safe(update_data):
+    """Безпечна обробка оновлення"""
+    try:
+        # Створюємо оновлення
+        update = Update.de_json(update_data, application.bot)
+        
+        # Використовуємо основний event loop бота
+        future = asyncio.run_coroutine_threadsafe(
+            application.process_update(update), 
+            bot_loop
+        )
+        future.result(timeout=10)  # Чекаємо до 10 секунд
+        
+        logger.info("✅ Оновлення успішно оброблено")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка обробки оновлення: {e}")
+        return False
 
 def set_webhook_manual():
     """Встановити вебхук без requests"""
@@ -84,20 +126,13 @@ def webhook():
         
         logger.info(f"📨 Отримано вебхук від Telegram")
         
-        # Створюємо оновлення
-        update = Update.de_json(data, application.bot)
+        # Обробляємо оновлення безпечно
+        success = process_update_safe(data)
         
-        # Обробляємо асинхронно
-        async def process_update():
-            await application.process_update(update)
-        
-        # Запускаємо обробку
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(process_update())
-        loop.close()
-        
-        return jsonify({"status": "ok"})
+        if success:
+            return jsonify({"status": "ok"})
+        else:
+            return jsonify({"error": "Failed to process update"}), 500
         
     except Exception as e:
         logger.error(f"❌ Помилка вебхука: {e}")
@@ -134,16 +169,15 @@ def check_webhook():
 
 def main():
     """Запуск програми"""
-    # Ініціалізація бота
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    success = loop.run_until_complete(init_bot())
+    # Запускаємо бота в окремому потоці
+    bot_thread = threading.Thread(target=run_bot_in_thread, daemon=True)
+    bot_thread.start()
     
-    if not success:
-        logger.error("❌ Не вдалося ініціалізувати бота")
-        return
+    # Чекаємо трохи на ініціалізацію бота
+    import time
+    time.sleep(3)
     
-    # Автоматично встановлюємо вебхук при запуску
+    # Встановлюємо вебхук
     logger.info("🌐 Встановлення вебхука...")
     set_webhook_manual()
     
