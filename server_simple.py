@@ -3,15 +3,13 @@ import threading
 import asyncio
 import os
 import logging
-from main import app as flask_app, setup_handlers
-from config import TOKEN, ADMIN_ID
-from telegram.ext import Application
-from telegram import Update
-import importlib
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Створюємо новий Flask додаток (не імпортуємо з main.py)
+app = Flask(__name__)
 
 WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 application = None
@@ -23,35 +21,33 @@ def setup_bot():
     try:
         logger.info("🔧 Налаштування бота...")
         
+        # Імпортуємо все необхідне
+        from config import TOKEN
+        from telegram.ext import Application
+        
         # Створюємо бота
         application = Application.builder().token(TOKEN).build()
         
-        # Імпортуємо та налаштовуємо ваші обробники
+        # Налаштовуємо обробники з main.py
         try:
-            # Імпортуємо всі необхідні модулі
-            from handlers.profile import start_profile_creation, show_my_profile, handle_profile_message, handle_main_photo
-            from handlers.search import search_profiles, search_by_city, show_next_profile, handle_like
-            from handlers.admin import handle_admin_actions, show_admin_panel
-            from handlers.notifications import notification_system
-            
-            # Налаштовуємо обробники з main.py
+            # Імпортуємо функцію setup_handlers з main.py
+            import sys
+            sys.path.append('/opt/render/project/src')
+            from main import setup_handlers
             setup_handlers(application)
-            
             logger.info("✅ Всі обробники завантажено")
             
-        except ImportError as e:
-            logger.error(f"❌ Помилка імпорту обробників: {e}")
-            # Використовуємо простий обробник як запасний варіант
-            from telegram.ext import CommandHandler, MessageHandler, filters
+        except Exception as e:
+            logger.error(f"❌ Помилка завантаження обробників: {e}")
+            # Запасний варіант - простий обробник
+            from telegram.ext import CommandHandler
+            from telegram import Update
             
             async def start(update: Update, context):
-                await update.message.reply_text("👋 Привіт! Основний функціонал завантажується...")
-            
-            async def echo(update: Update, context):
-                await update.message.reply_text("🔧 Бот в режимі обслуговування. Спробуйте пізніше.")
+                await update.message.reply_text("👋 Привіт! Chatrix Bot працює! 🎉")
             
             application.add_handler(CommandHandler("start", start))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+            logger.info("✅ Простий обробник завантажено")
         
         # Встановлюємо вебхук
         loop = asyncio.new_event_loop()
@@ -77,7 +73,7 @@ logger.info("🚀 Запуск бота...")
 bot_thread = threading.Thread(target=setup_bot, daemon=True)
 bot_thread.start()
 
-@flask_app.route('/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook_handler():
     """Обробник вебхука для Telegram"""
     try:
@@ -88,16 +84,15 @@ def webhook_handler():
         if not update_data:
             return "Empty update data", 400
             
-        # Обробляємо оновлення в тому ж потоці, де працює бот
+        # Обробляємо оновлення
+        from telegram import Update
         update = Update.de_json(update_data, application.bot)
         
-        # Використовуємо основний event loop бота для обробки
+        # Використовуємо основний event loop бота
         if hasattr(application, 'update_queue'):
-            # Додаємо оновлення в чергу бота
             async def put_update():
                 await application.update_queue.put(update)
             
-            # Запускаємо в потоці бота
             import asyncio
             try:
                 loop = asyncio.get_event_loop()
@@ -106,7 +101,6 @@ def webhook_handler():
                 else:
                     loop.run_until_complete(put_update())
             except RuntimeError:
-                # Якщо немає event loop, створюємо новий
                 new_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(new_loop)
                 new_loop.run_until_complete(put_update())
@@ -117,23 +111,29 @@ def webhook_handler():
         logger.error(f"❌ Webhook помилка: {e}")
         return 'error', 500
 
-# Додаємо тестові маршрути
-@flask_app.route('/')
+# Додаємо унікальні маршрути (без конфліктів з main.py)
+@app.route('/')
 def home():
     return "🤖 Chatrix Bot is running with full functionality!", 200
 
-@flask_app.route('/health')
+@app.route('/health')
 def health():
     return "OK", 200
 
-@flask_app.route('/test-bot')
+@app.route('/test-bot')
 def test_bot():
     """Тестовий маршрут для перевірки стану бота"""
     if application and application.bot:
         return f"✅ Bot is running. Webhook: {WEBHOOK_URL}"
     return "❌ Bot not initialized", 500
 
+@app.route('/status')
+def status():
+    """Статус бота"""
+    bot_status = "running" if application else "not initialized"
+    return f"Bot status: {bot_status}", 200
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"🌐 Запуск сервера на порті {port}")
-    flask_app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)
