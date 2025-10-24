@@ -1,6 +1,12 @@
 import os
 import logging
 from main import app, init_bot
+rint(f"🔧 PORT змінна: {os.environ.get('PORT')}")
+print(f"🔧 Поточний каталог: {os.getcwd()}")
+print(f"🔧 Файли в каталозі: {os.listdir('.')}")
+
+port = int(os.environ.get("PORT", 10000))
+print(f"🌐 Використовуємо порт: {port}")
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
