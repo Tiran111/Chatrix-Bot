@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 # Налаштування логування
@@ -567,63 +567,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Помилка в error_handler: {e}")
 
-def init_bot():
-    """Ініціалізація бота"""
-    global application, bot_initialized
-    
-    if bot_initialized:
-        logger.info("✅ Бот вже ініціалізовано")
-        return True
-        
-    try:
-        logger.info("🔄 Ініціалізація бота...")
-        
-        # Створюємо додаток
-        application = Application.builder().token(TOKEN).build()
-        
-        # Додаємо обробники
-        setup_handlers(application)
-        
-        bot_initialized = True
-        logger.info("✅ Бот успішно ініціалізовано!")
-        logger.info(f"🌐 Вебхук буде встановлено при першому запиті: {WEBHOOK_URL}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}")
-        return False
-
-async def init_bot_async():
-    """Асинхронна ініціалізація бота"""
-    global application, bot_initialized
-    
-    if bot_initialized:
-        return True
-        
-    try:
-        logger.info("🔄 Асинхронна ініціалізація бота...")
-        
-        # Створюємо додаток
-        application = Application.builder().token(TOKEN).build()
-        
-        # Додаємо обробники
-        setup_handlers(application)
-        
-        # Ініціалізуємо
-        await application.initialize()
-        
-        # Встановлюємо вебхук
-        await application.bot.set_webhook(WEBHOOK_URL)
-        
-        bot_initialized = True
-        logger.info("✅ Бот успішно ініціалізовано асинхронно!")
-        logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка асинхронної ініціалізації бота: {e}")
-        return False
-
 def setup_handlers(application):
     """Налаштування обробників"""
     logger.info("🔄 Налаштування обробників...")
@@ -682,31 +625,32 @@ def webhook():
         # Ініціалізуємо бота при першому запиті, якщо ще не ініціалізовано
         if not bot_initialized:
             logger.info("🔄 Ініціалізація бота при першому запиті...")
-            if not init_bot():
-                return "Bot initialization failed", 500
+            application = Application.builder().token(TOKEN).build()
+            setup_handlers(application)
+            
+            # Ініціалізуємо бота
+            application.initialize()
+            
+            # Встановлюємо вебхук
+            application.bot.set_webhook(WEBHOOK_URL)
+            
+            bot_initialized = True
+            logger.info("✅ Бот успішно ініціалізовано!")
+            logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
             
         update_data = request.get_json()
         if update_data is None:
             return "Empty update data", 400
             
-        # Обробляємо оновлення в окремому потоці
+        # Обробляємо оновлення
         update = Update.de_json(update_data, application.bot)
-        
-        # Використовуємо asyncio для обробки оновлення
-        asyncio.create_task(process_update(update))
+        application.process_update(update)
         
         return 'ok'
         
     except Exception as e:
         logger.error(f"❌ Webhook помилка: {e}")
-        return "Error", 200
-
-async def process_update(update):
-    """Асинхронна обробка оновлення"""
-    try:
-        await application.process_update(update)
-    except Exception as e:
-        logger.error(f"❌ Помилка обробки оновлення: {e}")
+        return "Error", 500
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
@@ -749,9 +693,6 @@ if __name__ == '__main__':
     print(f"🌐 Запуск сервера на порті {port}...")
     print("🤖 Сервер готовий до роботи!")
     print("=" * 50)
-    
-    # Ініціалізуємо бота
-    init_bot()
     
     # Запускаємо Flask сервер
     app.run(host='0.0.0.0', port=port, debug=False)
