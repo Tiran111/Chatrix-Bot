@@ -647,21 +647,37 @@ async def init_bot():
         return False
 
 def process_update_safe(update_data):
-    """Безпечна обробка оновлення"""
+    """Безпечна обробка оновлення з правильним event loop"""
     try:
         # Створюємо оновлення
         update = Update.de_json(update_data, application.bot)
         
         # Використовуємо основний event loop бота
-        future = asyncio.run_coroutine_threadsafe(
-            application.process_update(update), 
-            bot_loop
-        )
-        future.result(timeout=10)  # Чекаємо до 10 секунд
+        if bot_loop and bot_loop.is_running():
+            # Створюємо завдання в існуючому event loop
+            future = asyncio.run_coroutine_threadsafe(
+                application.process_update(update), 
+                bot_loop
+            )
+            # Чекаємо результат (але не блокуємо надто довго)
+            future.result(timeout=10)
+            logger.info("✅ Оновлення успішно оброблено в існуючому loop")
+            return True
+        else:
+            # Якщо event loop не працює, створюємо новий
+            logger.warning("⚠️ Основний event loop не працює, створюємо новий")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(application.process_update(update))
+                logger.info("✅ Оновлення оброблено в новому loop")
+                return True
+            finally:
+                loop.close()
         
-        logger.info("✅ Оновлення успішно оброблено")
-        return True
-        
+    except asyncio.TimeoutError:
+        logger.error("❌ Таймаут обробки оновлення")
+        return False
     except Exception as e:
         logger.error(f"❌ Помилка обробки оновлення: {e}")
         return False
