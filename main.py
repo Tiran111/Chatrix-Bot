@@ -558,6 +558,12 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_menu(user.id)
         )
 
+async def debug_webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Простий дебаг вебхука"""
+    user = update.effective_user
+    print(f"🔔 Отримано повідомлення від {user.id} - {user.first_name}")
+    await update.message.reply_text("🔔 Бот отримав ваше повідомлення!")        
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     try:
@@ -604,6 +610,7 @@ def setup_handlers(application):
     logger.info("🔄 Налаштування обробників...")
     
     # Основні команди
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, debug_webhook))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("debug", debug_bot))
     application.add_handler(CommandHandler("cancel", cancel_command))
