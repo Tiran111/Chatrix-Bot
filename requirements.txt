@@ -3,3 +3,4 @@ flask==2.3.3
 psycopg2-binary==2.9.7
 gunicorn==21.2.0
 waitress==2.1.2
+requests==2.31.0
