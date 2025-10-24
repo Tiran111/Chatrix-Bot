@@ -34,6 +34,7 @@ try:
     print("✅ Dependencies imported")
 except ImportError as e:
     print(f"❌ Import error: {e}")
+    print("💡 This should not happen - dependencies should be installed")
     exit(1)
 
 # Створення Flask додатку
