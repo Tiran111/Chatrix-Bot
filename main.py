@@ -39,6 +39,7 @@ PORT = int(os.environ.get('PORT', 10000))
 # Глобальний об'єкт бота
 application = None
 bot_initialized = False
+init_lock = threading.Lock()
 
 # Стани для ConversationHandler
 PROFILE_AGE, PROFILE_GENDER, PROFILE_CITY, PROFILE_SEEKING_GENDER, PROFILE_GOAL, PROFILE_BIO = range(6)
@@ -459,22 +460,37 @@ def init_bot_sync():
     """Синхронна обгортка для ініціалізації бота"""
     global bot_initialized
     
-    try:
-        # Створюємо новий event loop для цього потоку
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Запускаємо асинхронну ініціалізацію
-        loop.run_until_complete(init_bot_async())
-        
+    with init_lock:
         if bot_initialized:
-            logger.info("✅ Бот ініціалізовано в синхронному режимі")
-        else:
-            logger.error("❌ Не вдалося ініціалізувати бота")
+            logger.info("✅ Бот вже ініціалізований")
+            return
             
-    except Exception as e:
-        logger.error(f"❌ Помилка синхронної ініціалізації: {e}")
-        bot_initialized = False
+        try:
+            # Створюємо новий event loop для цього потоку
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Запускаємо асинхронну ініціалізацію
+            loop.run_until_complete(init_bot_async())
+            
+            if bot_initialized:
+                logger.info("✅ Бот ініціалізовано в синхронному режимі")
+            else:
+                logger.error("❌ Не вдалося ініціалізувати бота")
+                
+        except Exception as e:
+            logger.error(f"❌ Помилка синхронної ініціалізації: {e}")
+            bot_initialized = False
+
+def ensure_bot_initialized():
+    """Переконатися, що бот ініціалізований"""
+    global bot_initialized
+    
+    if not bot_initialized:
+        logger.info("🔄 Спроба ініціалізації бота...")
+        init_bot_sync()
+    
+    return bot_initialized
 
 # ==================== FLASK ROUTES ====================
 
@@ -506,7 +522,8 @@ def webhook():
     global application, bot_initialized
     
     try:
-        if not bot_initialized or not application:
+        # Переконуємося, що бот ініціалізований
+        if not ensure_bot_initialized():
             logger.error("❌ Бот не ініціалізований")
             return "Bot not initialized", 500
             
@@ -528,15 +545,11 @@ def webhook():
 
 # ==================== ЗАПУСК СЕРВЕРА ====================
 
-def run_bot():
-    """Запуск бота в окремому потоці"""
-    init_bot_sync()
-
 def main():
     """Запуск програми"""
     
     # Запускаємо бота в окремому потоці
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread = threading.Thread(target=init_bot_sync, daemon=True)
     bot_thread.start()
     
     # Чекаємо на ініціалізацію бота
