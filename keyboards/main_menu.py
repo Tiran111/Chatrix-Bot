@@ -1,48 +1,57 @@
 from telegram import ReplyKeyboardMarkup
-try:
-    from database_postgres import db
-except ImportError:
-    from database.models import db
 from config import ADMIN_ID
 
-def get_main_menu(user_id):
-    """Генерація головного меню"""
-    try:
-        user_id_int = int(user_id)
-    except:
-        user_id_int = user_id
-    
-    user_data, is_complete = db.get_user_profile(user_id)
-    
-    # Перевіряємо чи це адмін
-    is_admin = (user_id_int == ADMIN_ID)
-    
-    if is_admin:
-        # Меню для адміністратора
+def get_main_menu(user_id=None):
+    """Головне меню без кнопки '👀 Хто переглядав'"""
+    if user_id and user_id == ADMIN_ID:
         keyboard = [
             ['💕 Пошук анкет', '🏙️ По місту'],
             ['👤 Мій профіль', '📝 Редагувати'],
-            ['❤️ Хто мене лайкнув', '👀 Хто переглядав'],
-            ['💌 Мої матчі', '🏆 Топ'],
-            ["👨‍💼 Зв'язок з адміном"],
+            ['❤️ Хто мене лайкнув', '💌 Мої матчі'],
+            ['🏆 Топ', "👨‍💼 Зв'язок з адміном"],
             ['👑 Адмін панель']
         ]
-    elif not is_complete:
-        # Якщо профіль не заповнений
-        keyboard = [['📝 Заповнити профіль']]
     else:
-        # Якщо профіль заповнений
         keyboard = [
             ['💕 Пошук анкет', '🏙️ По місту'],
             ['👤 Мій профіль', '📝 Редагувати'],
-            ['❤️ Хто мене лайкнув', '👀 Хто переглядав'],
-            ['💌 Мої матчі', '🏆 Топ'],
-            ["👨‍💼 Зв'язок з адміном"]
+            ['❤️ Хто мене лайкнув', '💌 Мої матчі'],
+            ['🏆 Топ', "👨‍💼 Зв'язок з адміном"]
         ]
     
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+def get_search_menu():
+    """Меню пошуку"""
+    keyboard = [
+        ['❤️ Лайк', '➡️ Далі'],
+        ['🔙 Меню']
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_profile_menu():
+    """Меню профілю"""
+    keyboard = [
+        ['📝 Редагувати профіль', '📷 Додати фото'],
+        ['🔙 Меню']
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_admin_menu():
+    """Адмін меню"""
+    keyboard = [
+        ['📊 Статистика', '👥 Користувачі'],
+        ['📢 Розсилка', '🔄 Оновити базу'],
+        ['🚫 Блокування', '🔙 Меню']
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_back_to_menu_keyboard():
+    """Клавіатура для повернення в меню"""
+    keyboard = [['🔙 Меню']]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 def get_cancel_keyboard():
-    """Клавіатура скасування"""
+    """Клавіатура для скасування"""
     keyboard = [['🔙 Скасувати']]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

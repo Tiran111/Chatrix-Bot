@@ -780,48 +780,24 @@ async def handle_top_like(update: Update, context: CallbackContext):
         logger.error(f"❌ Помилка обробки лайку з топу: {e}", exc_info=True)
         await update.message.reply_text("❌ Сталася помилка при обробці лайку.")    
 
-async def show_profile_views(update: Update, context: CallbackContext):
-    """Показати хто переглядав профіль"""
+async def show_next_after_like(update: Update, context: CallbackContext):
+    """Показати наступний профіль після лайку"""
     user = update.effective_user
     
     try:
-        user_data = db.get_user(user.id)
-        if user_data and user_data.get('is_banned'):
-            await update.message.reply_text("🚫 Ваш акаунт заблоковано.")
-            return
+        # Перевіряємо тип пошуку
+        search_type = context.user_data.get('search_type')
         
-        viewers = db.get_profile_views(user.id)
-        
-        logger.info(f"🔍 [PROFILE VIEWS] Для користувача {user.id} знайдено {len(viewers)} переглядів")
-        
-        if viewers:
-            # Зберігаємо переглядачів у контексті
-            context.user_data['profile_viewers'] = viewers
-            context.user_data['current_viewer_index'] = 0
-            
-            await update.message.reply_text(
-                f"👀 *Вас переглядали ({len(viewers)} користувачів):*", 
-                parse_mode='Markdown'
-            )
-            
-            # Показуємо першого переглядача
-            await show_next_profile_view(update, context)
-                    
+        if search_type == 'top':
+            # Для топу - показуємо наступного користувача з топу
+            await handle_top_navigation(update, context)
         else:
-            await update.message.reply_text(
-                "😔 Вас ще ніхто не переглядав\n\n"
-                "💡 *Порада:*\n"
-                "• Активніше шукайте анкети\n"
-                "• Ставте лайки\n" 
-                "• Заповніть профіль повністю\n"
-                "• Додайте якісні фото",
-                reply_markup=get_main_menu(user.id),
-                parse_mode='Markdown'
-            )
+            # Для звичайного пошуку - показуємо наступний профіль
+            await show_next_profile(update, context)
             
     except Exception as e:
-        logger.error(f"❌ Помилка показу переглядів: {e}", exc_info=True)
+        logger.error(f"❌ Помилка показу наступного профілю після лайку: {e}")
         await update.message.reply_text(
-            "❌ Помилка завантаження переглядів. Спробуйте ще раз.",
+            "❌ Помилка. Повертаємось до меню.",
             reply_markup=get_main_menu(user.id)
-        )                     
+        )

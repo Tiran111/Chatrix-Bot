@@ -5,6 +5,7 @@ import threading
 from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+from keep_alive import start_keep_alive
 
 # Налаштування логування
 logging.basicConfig(
@@ -484,11 +485,6 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         elif text == "👨‍💼 Зв'язок з адміном":
             await contact_admin(update, context)
-            return
-
-        elif text == "👀 Хто переглядав":
-            from handlers.search import show_profile_views
-            await show_profile_views(update, context)
             return
 
         elif text == "❤️ Лайк":  # Для лайків з топу
