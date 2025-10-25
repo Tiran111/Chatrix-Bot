@@ -146,6 +146,7 @@ class Database:
         """Ініціалізація бази даних"""
         logger.info("🔄 Ініціалізація бази даних...")
         
+        # Створення таблиці users
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -167,6 +168,7 @@ class Database:
             )
         ''')
         
+        # Створення таблиці photos
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS photos (
                 id SERIAL PRIMARY KEY,
@@ -177,6 +179,7 @@ class Database:
             )
         ''')
         
+        # Створення таблиці likes
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS likes (
                 id SERIAL PRIMARY KEY,
@@ -187,6 +190,7 @@ class Database:
             )
         ''')
         
+        # Створення таблиці matches
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS matches (
                 id SERIAL PRIMARY KEY,
@@ -197,17 +201,66 @@ class Database:
             )
         ''')
         
+        # Створення таблиці profile_views з правильними назвами колонок
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS profile_views (
                 id SERIAL PRIMARY KEY,
-                viewer_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                viewed_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                viewer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                viewed_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                 viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
+        # Додавання відсутніх колонок
         self.add_missing_columns()
+        
+        # Перевірка та виправлення таблиці profile_views
+        self.fix_profile_views_table_if_needed()
+        
         logger.info("✅ База даних ініціалізована")
+
+    def fix_profile_views_table_if_needed(self):
+        """Перевірка та виправлення таблиці profile_views при необхідності"""
+        try:
+            # Перевіряємо чи існують правильні колонки
+            self.execute_safe("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'profile_views' AND column_name = 'viewer_id'
+            """)
+            has_correct_columns = self.cursor.fetchone() is not None
+            
+            if not has_correct_columns:
+                logger.warning("⚠️ Таблиця profile_views має неправильні колонки. Виправляємо...")
+                return self.fix_profile_views_table()
+            
+            logger.info("✅ Таблиця profile_views має правильні колонки")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка перевірки таблиці profile_views: {e}")
+            return False
+
+    def fix_profile_views_table(self):
+        """Виправлення структури таблиці profile_views"""
+        try:
+            # Видаляємо стару таблицю
+            self.execute_safe('DROP TABLE IF EXISTS profile_views CASCADE')
+            
+            # Створюємо нову таблицю з правильними назвами колонок
+            self.execute_safe('''
+                CREATE TABLE profile_views (
+                    id SERIAL PRIMARY KEY,
+                    viewer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            logger.info("✅ Таблицю profile_views перестворено з правильними колонками")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка виправлення таблиці profile_views: {e}")
+            return False
 
     def add_missing_columns(self):
         """Додавання відсутніх колонок"""
@@ -219,6 +272,7 @@ class Database:
         
         for table, column, definition in columns_to_add:
             try:
+                # Перевіряємо чи існує колонка
                 self.execute_safe(f'''
                     SELECT column_name 
                     FROM information_schema.columns 
@@ -237,12 +291,14 @@ class Database:
     def add_user(self, telegram_id, username, first_name):
         """Додавання нового користувача"""
         try:
+            # Перевіряємо чи існує користувач
             existing_user = self.fetch_one_safe('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if existing_user:
                 logger.info(f"ℹ️ Користувач {telegram_id} вже існує")
                 return True
             
+            # Додаємо нового користувача
             if self.execute_safe('''
                 INSERT INTO users (telegram_id, username, first_name, created_at, last_active, rating)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -267,12 +323,14 @@ class Database:
                           seeking_gender=None, goal=None, bio=None):
         """Оновлення профілю користувача"""
         try:
+            # Спочатку перевіряємо чи існує користувач
             user = self.fetch_one_safe('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if not user:
                 logger.error(f"❌ Користувача {telegram_id} не знайдено для оновлення")
                 return False
             
+            # Оновлюємо профіль
             update_fields = []
             values = []
             
@@ -295,8 +353,11 @@ class Database:
                 update_fields.append("bio = %s")
                 values.append(bio)
             
+            # Додаємо оновлення часу останньої активності
             update_fields.append("last_active = %s")
             values.append(datetime.now())
+            
+            # Додаємо telegram_id в кінець для WHERE умови
             values.append(telegram_id)
             
             if update_fields:
@@ -316,15 +377,18 @@ class Database:
     def update_or_create_user_profile(self, telegram_id, age, gender, city, seeking_gender, goal, bio):
         """Оновлення або створення профілю користувача"""
         try:
+            # Спочатку перевіряємо чи існує користувач
             user = self.get_user(telegram_id)
             
             if not user:
+                # Якщо користувача немає, створюємо його
                 logger.info(f"🔄 Користувача {telegram_id} не знайдено, створюємо...")
                 success = self.add_user(telegram_id, "unknown", "User")
                 if not success:
                     logger.error(f"❌ Не вдалося створити користувача {telegram_id}")
                     return False
             
+            # Тепер оновлюємо профіль
             return self.update_user_profile(
                 telegram_id=telegram_id,
                 age=age,
@@ -345,6 +409,7 @@ class Database:
             user = self.fetch_one_safe('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if user:
+                # Перевіряємо чи профіль заповнений
                 is_complete = all([
                     user.get('age'),
                     user.get('gender'), 
@@ -362,23 +427,28 @@ class Database:
     def add_user_photo(self, telegram_id, file_id, is_main=False):
         """Додавання фото користувача до бази даних"""
         try:
+            # Отримуємо ID користувача
             user = self.fetch_one_safe('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if not user:
                 logger.error(f"❌ Користувача {telegram_id} не знайдено для додавання фото")
                 return False
             
+            # Перевіряємо кількість фото користувача
             result = self.fetch_one_safe('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user['id'],))
             photo_count = result['count'] if result else 0
             
+            # Якщо це перше фото, автоматично робимо його основним
             if photo_count == 0:
                 is_main = True
             
+            # Додаємо фото
             if self.execute_safe('''
                 INSERT INTO photos (user_id, file_id, is_main)
                 VALUES (%s, %s, %s)
             ''', (user['id'], file_id, is_main)):
                 
+                # Оновлюємо прапорець has_photo у користувача
                 self.execute_safe('''
                     UPDATE users SET has_photo = TRUE 
                     WHERE telegram_id = %s
@@ -395,6 +465,7 @@ class Database:
     def get_profile_photos(self, telegram_id):
         """Отримання фото профілю"""
         try:
+            # Спочатку перевіряємо чи існує колонка is_main
             has_is_main = self.fetch_one_safe('''
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -409,6 +480,7 @@ class Database:
                     ORDER BY p.is_main DESC, p.created_at ASC
                 ''', (telegram_id,))
             else:
+                # Якщо колонки is_main немає, використовуємо старий запит
                 photos = self.fetch_safe('''
                     SELECT p.file_id FROM photos p
                     JOIN users u ON p.user_id = u.id
@@ -424,6 +496,7 @@ class Database:
     def get_main_photo(self, telegram_id):
         """Отримання головного фото"""
         try:
+            # Спочатку перевіряємо чи існує колонка is_main
             has_is_main = self.fetch_one_safe('''
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -439,6 +512,7 @@ class Database:
                     LIMIT 1
                 ''', (telegram_id,))
             else:
+                # Якщо колонки is_main немає, беремо перше фото
                 result = self.fetch_one_safe('''
                     SELECT p.file_id FROM photos p
                     JOIN users u ON p.user_id = u.id
@@ -455,16 +529,19 @@ class Database:
     def set_main_photo(self, telegram_id, file_id):
         """Встановлення головного фото"""
         try:
+            # Отримуємо ID користувача
             user = self.fetch_one_safe('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if not user:
                 return False
             
+            # Спочатку скидаємо всі is_main на False
             self.execute_safe('''
                 UPDATE photos SET is_main = FALSE 
                 WHERE user_id = %s
             ''', (user['id'],))
             
+            # Потім встановлюємо обране фото як головне
             if self.execute_safe('''
                 UPDATE photos SET is_main = TRUE 
                 WHERE user_id = %s AND file_id = %s
@@ -480,24 +557,29 @@ class Database:
     def delete_photo(self, telegram_id, file_id):
         """Видалення фото"""
         try:
+            # Отримуємо ID користувача
             user = self.fetch_one_safe('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
             
             if not user:
                 return False
             
+            # Видаляємо фото
             if self.execute_safe('''
                 DELETE FROM photos 
                 WHERE user_id = %s AND file_id = %s
             ''', (user['id'], file_id)):
                 
+                # Перевіряємо чи залишилися фото
                 result = self.fetch_one_safe('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user['id'],))
                 remaining_photos = result['count'] if result else 0
                 
+                # Якщо фото не залишилося, оновлюємо has_photo
                 if remaining_photos == 0:
                     self.execute_safe('''
                         UPDATE users SET has_photo = FALSE 
                         WHERE telegram_id = %s
                     ''', (telegram_id,))
+                # Якщо видалили головне фото, встановлюємо нове головне
                 else:
                     new_main = self.fetch_one_safe('''
                         SELECT file_id FROM photos 
@@ -528,15 +610,19 @@ class Database:
     def get_statistics(self):
         """Отримання статистики"""
         try:
+            # Кількість чоловіків
             male_result = self.fetch_one_safe('SELECT COUNT(*) FROM users WHERE gender = %s AND is_banned = FALSE', ('male',))
             male_count = male_result['count'] if male_result else 0
             
+            # Кількість жінок
             female_result = self.fetch_one_safe('SELECT COUNT(*) FROM users WHERE gender = %s AND is_banned = FALSE', ('female',))
             female_count = female_result['count'] if female_result else 0
             
+            # Загальна кількість активних користувачів
             active_result = self.fetch_one_safe('SELECT COUNT(*) FROM users WHERE age IS NOT NULL AND is_banned = FALSE')
             total_active = active_result['count'] if active_result else 0
             
+            # Статистика цілей
             goals_stats = self.fetch_safe('SELECT goal, COUNT(*) FROM users WHERE goal IS NOT NULL AND is_banned = FALSE GROUP BY goal')
             
             return male_count, female_count, total_active, goals_stats
@@ -636,12 +722,14 @@ class Database:
     def add_like(self, from_user_id, to_user_id):
         """Додавання лайку"""
         try:
+            # Перевіряємо чи існують користувачі
             from_user = self.get_user(from_user_id)
             to_user = self.get_user(to_user_id)
             
             if not from_user or not to_user:
                 return False, "Користувача не знайдено"
             
+            # Додаємо лайк
             if self.execute_safe('''
                 INSERT INTO likes (from_user_id, to_user_id)
                 VALUES ((SELECT id FROM users WHERE telegram_id = %s), 
@@ -650,6 +738,7 @@ class Database:
             ''', (from_user_id, to_user_id)):
                 
                 if self.cursor.rowcount > 0:
+                    # Оновлюємо кількість лайків
                     self.execute_safe('''
                         UPDATE users SET likes_count = likes_count + 1 
                         WHERE telegram_id = %s
@@ -723,9 +812,9 @@ class Database:
             if not viewer or not viewed:
                 return False
             
-            # Додаємо перегляд
+            # Додаємо перегляд - використовуємо правильні назви колонок
             if self.execute_safe('''
-                INSERT INTO profile_views (viewer_user_id, viewed_user_id, viewed_at)
+                INSERT INTO profile_views (viewer_id, viewed_id, viewed_at)
                 VALUES (
                     (SELECT id FROM users WHERE telegram_id = %s), 
                     (SELECT id FROM users WHERE telegram_id = %s),
@@ -744,8 +833,8 @@ class Database:
         try:
             return self.fetch_safe('''
                 SELECT DISTINCT u.* FROM users u
-                JOIN profile_views pv ON u.id = pv.viewer_user_id
-                WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                JOIN profile_views pv ON u.id = pv.viewer_id
+                WHERE pv.viewed_id = (SELECT id FROM users WHERE telegram_id = %s)
                 AND u.telegram_id != %s
                 ORDER BY pv.viewed_at DESC
                 LIMIT 50
@@ -776,6 +865,7 @@ class Database:
             return []
 
     def calculate_user_rating(self, telegram_id):
+       
         """Розрахунок рейтингу користувача"""
         try:
             user = self.get_user(telegram_id)
@@ -888,6 +978,28 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Помилка перевірки лайків: {e}")
             return True, "Ліміт не перевірено"
+
+    def fix_profile_views_table(self):
+        """Виправлення структури таблиці profile_views"""
+        try:
+            # Видаляємо стару таблицю
+            self.execute_safe('DROP TABLE IF EXISTS profile_views CASCADE')
+        
+            # Створюємо нову таблицю з правильними назвами колонок
+            self.execute_safe('''
+                CREATE TABLE profile_views (
+                    id SERIAL PRIMARY KEY,
+                    viewer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+             )
+            ''')
+        
+        logger.info("✅ Таблицю profile_views перестворено з правильними колонками")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Помилка виправлення таблиці profile_views: {e}")
+        return False
 
 # Глобальний об'єкт бази даних
 db = Database()

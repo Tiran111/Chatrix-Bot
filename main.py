@@ -747,6 +747,31 @@ def webhook():
         logger.error(f"❌ Webhook помилка: {e}")
         return "Error", 200
 
+@app.route('/debug_db')
+def debug_db():
+    """Сторінка для дебагу структури бази даних"""
+    try:
+        from database_postgres import db
+        
+        result = "<h1>Debug Database Structure</h1>"
+        
+        # Перевіряємо структуру таблиці profile_views
+        db.cursor.execute("""
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'profile_views' 
+            ORDER BY ordinal_position
+        """)
+        columns = db.cursor.fetchall()
+        
+        result += "<h2>Profile Views Table Columns:</h2>"
+        for col in columns:
+            result += f"<p>{col['column_name']} - {col['data_type']}</p>"
+        
+        return result
+    except Exception as e:
+        return f"Error: {str(e)}"       
+
 @app.route('/set_webhook')
 def set_webhook_route():
     """Встановити вебхук вручну"""
@@ -783,6 +808,19 @@ def check_webhook():
             return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/fix_views_table')
+def fix_views_table():
+    """Примусове виправлення таблиці profile_views"""
+    try:
+        from database_postgres import db
+        success = db.fix_profile_views_table()
+        if success:
+            return "✅ Таблицю profile_views виправлено!"
+        else:
+            return "❌ Не вдалося виправити таблицю"
+    except Exception as e:
+        return f"❌ Помилка: {str(e)}"        
 
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
