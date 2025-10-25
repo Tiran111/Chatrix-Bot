@@ -24,26 +24,6 @@ def get_bot_token():
         raise ValueError("❌ BOT_TOKEN не встановлено або використовується тестовий токен")
     return token
 
-# Додайте цей метод до config.py
-def check_database_connection():
-    """Перевірка з'єднання з базою даних"""
-    try:
-        from database_postgres import db
-        # Проста перевірка
-        db.execute_safe("SELECT 1")
-        print("✅ З'єднання з базою даних успішне")
-        return True
-    except Exception as e:
-        print(f"❌ Помилка з'єднання з базою даних: {e}")
-        return False
-
-# Викликайте перевірку після ініціалізації
-try:
-    initialize_config()
-    check_database_connection()
-except Exception as e:
-    print(f"⚠️ Помилка ініціалізації конфігурації: {e}")    
-
 # Глобальні змінні будуть встановлені пізніше
 TOKEN = None
 ADMIN_ID = None
@@ -75,4 +55,3 @@ try:
     initialize_config()
 except Exception as e:
     print(f"⚠️ Помилка ініціалізації конфігурації: {e}")
-
