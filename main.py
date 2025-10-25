@@ -1,6 +1,5 @@
 import logging
 import os
-import asyncio
 import threading
 from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -8,6 +7,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, 
     filters, ConversationHandler
 )
+import asyncio
 
 # Налаштування логування
 logging.basicConfig(
@@ -423,12 +423,12 @@ def setup_handlers(app):
 
 # ==================== ІНІЦІАЛІЗАЦІЯ БОТА ====================
 
-async def init_bot():
-    """Ініціалізація бота"""
+def init_bot_sync():
+    """Синхронна ініціалізація бота"""
     global application, bot_initialized
     
     try:
-        logger.info("🔄 Ініціалізація бота...")
+        logger.info("🔄 Синхронна ініціалізація бота...")
         
         # Створюємо додаток
         application = Application.builder().token(TOKEN).build()
@@ -437,13 +437,10 @@ async def init_bot():
         setup_handlers(application)
         
         # Ініціалізуємо
-        await application.initialize()
+        application.initialize()
         
         # Встановлюємо вебхук
-        await application.bot.set_webhook(WEBHOOK_URL)
-        
-        # Запускаємо полінг в фоновому режимі
-        await application.start()
+        application.bot.set_webhook(WEBHOOK_URL)
         
         bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано!")
@@ -495,9 +492,9 @@ def webhook():
             
         logger.info("📨 Отримано вебхук від Telegram")
         
-        # Обробляємо оновлення через update_queue
+        # Обробляємо оновлення синхронно
         update = Update.de_json(update_data, application.bot)
-        application.update_queue.put_nowait(update)
+        application.process_update(update)
         
         return 'ok', 200
         
@@ -507,51 +504,17 @@ def webhook():
 
 # ==================== ЗАПУСК СЕРВЕРА ====================
 
-def run_bot():
-    """Запуск бота в окремому потоці"""
-    global bot_initialized
-    
-    try:
-        # Створюємо новий event loop для цього потоку
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Ініціалізація бота
-        bot_app = loop.run_until_complete(init_bot())
-        
-        if not bot_app:
-            logger.error("❌ Не вдалося ініціалізувати бота")
-            return
-        
-        logger.info("🔄 Бот запущено в потоці")
-        
-        # Запускаємо event loop
-        loop.run_forever()
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка в потоці бота: {e}")
-        bot_initialized = False
-
 def main():
     """Запуск програми"""
+    global bot_initialized
     
-    # Запускаємо бота в окремому потоці
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Чекаємо на ініціалізацію бота
-    import time
-    timeout = 10  # секунд
-    start_time = time.time()
-    
-    while not bot_initialized and (time.time() - start_time) < timeout:
-        logger.info("⏳ Чекаємо на ініціалізацію бота...")
-        time.sleep(1)
+    # Синхронна ініціалізація бота
+    init_bot_sync()
     
     if bot_initialized:
         logger.info("✅ Бот успішно ініціалізовано!")
     else:
-        logger.error("❌ Таймаут ініціалізації бота")
+        logger.error("❌ Не вдалося ініціалізувати бота")
     
     # Запуск Flask сервера
     logger.info(f"🚀 Запуск сервера на порті {PORT}")
