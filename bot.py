@@ -1,4 +1,4 @@
-# bot.py - Простий бот тільки з полінгом
+# bot.py - Повний функціонал бота
 import logging
 import asyncio
 import sys
@@ -285,6 +285,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             profile_text,
             parse_mode='HTML'
         )
+    
+    # Показуємо меню дій
+    await show_main_menu(update, context)
 
 def get_seeking_text(seeking_gender):
     """Отримати текст для пошуку"""
@@ -322,11 +325,249 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /profile"""
     await show_profile(update, context)
 
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /search - пошук анкет"""
+    user = update.effective_user
+    
+    # Перевіряємо чи заповнений профіль
+    user_data, is_complete = db.get_user_profile(user.id)
+    if not is_complete:
+        await update.message.reply_text(
+            "📝 Спочатку заповніть свій профіль командою /start",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Отримуємо випадкову анкету
+    random_user = db.get_random_user(user.id)
+    
+    if not random_user:
+        await update.message.reply_text(
+            "😔 Наразі немає анкет для перегляду.\n"
+            "Зачекайте, поки більше людей приєднається!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Формуємо текст анкети
+    profile_text = (
+        f"👤 <b>Анкета</b>\n\n"
+        f"👤 Ім'я: {random_user['first_name']}\n"
+        f"📅 Вік: {random_user['age']}\n"
+        f"🎯 Стать: {'👨 Чоловік' if random_user['gender'] == 'male' else '👩 Жінка'}\n"
+        f"🏙️ Місто: {random_user['city']}\n"
+        f"🎯 Ціль: {random_user['goal']}\n"
+        f"📖 Про себе: {random_user['bio']}\n\n"
+        f"⭐ Рейтинг: {random_user['rating']}/10\n"
+    )
+    
+    # Перевіряємо фото
+    photos = db.get_profile_photos(random_user['telegram_id'])
+    if photos:
+        # Відправляємо фото з описом
+        await update.message.reply_photo(
+            photo=photos[0],
+            caption=profile_text,
+            parse_mode='HTML'
+        )
+    else:
+        await update.message.reply_text(
+            profile_text,
+            parse_mode='HTML'
+        )
+    
+    # Додаємо кнопки для взаємодії
+    keyboard = [
+        ["❤️ Вподобати", "➡️ Наступна анкета"],
+        ["📊 Меню"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "Що робимо з цією анкетою?",
+        reply_markup=reply_markup
+    )
+
+async def likes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /likes - перегляд лайків"""
+    user = update.effective_user
+    
+    likers = db.get_user_likers(user.id)
+    
+    if not likers:
+        await update.message.reply_text(
+            "😔 Поки що ніхто вас не вподобав.\n"
+            "Активніше спілкуйтеся та ставте лайки!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    await update.message.reply_text(
+        f"❤️ <b>Вас вподобали:</b> {len(likers)} осіб\n\n"
+        "Список користувачів, які вам сподобались:",
+        parse_mode='HTML'
+    )
+    
+    for liker in likers[:10]:  # Показуємо перших 10
+        liker_text = (
+            f"👤 {liker['first_name']}\n"
+            f"📅 Вік: {liker['age']}\n"
+            f"🏙️ Місто: {liker['city']}\n"
+        )
+        
+        photos = db.get_profile_photos(liker['telegram_id'])
+        if photos:
+            await update.message.reply_photo(
+                photo=photos[0],
+                caption=liker_text
+            )
+        else:
+            await update.message.reply_text(liker_text)
+    
+    await show_main_menu(update, context)
+
+async def matches_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /matches - ваші матчі"""
+    user = update.effective_user
+    
+    matches = db.get_user_matches(user.id)
+    
+    if not matches:
+        await update.message.reply_text(
+            "😔 У вас поки що немає матчів.\n"
+            "Ставте більше лайків та знаходьте спільні симпатії!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    await update.message.reply_text(
+        f"💕 <b>Ваші матчі:</b> {len(matches)} осіб\n\n"
+        "Це користувачі, з якими ви взаємно вподобали один одного:",
+        parse_mode='HTML'
+    )
+    
+    for match in matches[:10]:  # Показуємо перших 10
+        match_text = (
+            f"👤 {match['first_name']}\n"
+            f"📅 Вік: {match['age']}\n"
+            f"🏙️ Місто: {match['city']}\n"
+            f"📖 Про себе: {match['bio'][:100]}...\n\n"
+            f"💌 Можете почати спілкування!"
+        )
+        
+        photos = db.get_profile_photos(match['telegram_id'])
+        if photos:
+            await update.message.reply_photo(
+                photo=photos[0],
+                caption=match_text
+            )
+        else:
+            await update.message.reply_text(match_text)
+    
+    await show_main_menu(update, context)
+
+# ==================== АДМІН КОМАНДИ ====================
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /admin"""
+    user = update.effective_user
+    
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
+        return
+    
+    admin_text = (
+        "👑 <b>Адмін панель</b>\n\n"
+        "📊 Статистика:\n"
+        f"• Користувачів: {db.get_users_count()}\n\n"
+        "🛠️ Команди:\n"
+        "/stats - Детальна статистика\n"
+        "/users - Список користувачів\n"
+        "/broadcast - Розсилка повідомлень\n"
+    )
+    await update.message.reply_text(admin_text, parse_mode='HTML')
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /stats"""
+    user = update.effective_user
+    
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
+        return
+    
+    male_count, female_count, total_active, goals_stats = db.get_statistics()
+    
+    stats_text = (
+        "📊 <b>Статистика бота</b>\n\n"
+        f"👥 Загалом користувачів: {db.get_users_count()}\n"
+        f"🟢 Активних: {total_active}\n\n"
+        f"👨 Чоловіків: {male_count}\n"
+        f"👩 Жінок: {female_count}\n\n"
+        "🎯 <b>Цілі користувачів:</b>\n"
+    )
+    
+    for goal_stat in goals_stats:
+        stats_text += f"• {goal_stat['goal']}: {goal_stat['count']}\n"
+    
+    await update.message.reply_text(stats_text, parse_mode='HTML')
+
+# ==================== МЕНЮ ТА ІНТЕРФЕЙС ====================
+
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показати головне меню"""
+    keyboard = [
+        ["👤 Мій профіль", "🔍 Пошук"],
+        ["❤️ Вподобані", "💕 Матчі"],
+        ["📊 Статистика", "ℹ️ Допомога"]
+    ]
+    
+    # Додаємо адмінську кнопку для адміністратора
+    if update.effective_user.id == ADMIN_ID:
+        keyboard.append(["👑 Адмін панель"])
+    
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "🎛️ <b>Головне меню</b>\n\n"
+        "Оберіть дію:",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка вибору з меню"""
+    text = update.message.text
+    
+    if text == "👤 Мій профіль":
+        await show_profile(update, context)
+    elif text == "🔍 Пошук":
+        await search_command(update, context)
+    elif text == "❤️ Вподобані":
+        await likes_command(update, context)
+    elif text == "💕 Матчі":
+        await matches_command(update, context)
+    elif text == "📊 Статистика":
+        await stats_command(update, context)
+    elif text == "ℹ️ Допомога":
+        await help_command(update, context)
+    elif text == "👑 Адмін панель" and update.effective_user.id == ADMIN_ID:
+        await admin_command(update, context)
+    else:
+        await update.message.reply_text("❌ Невідома команда. Використовуйте меню.")
+
 # ==================== ОБРОБНИКИ ПОМИЛОК ====================
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
+    
+    try:
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Сталася несподівана помилка. Спробуйте пізніше або зверніться до адміністратора."
+            )
+    except Exception as e:
+        logger.error(f"❌ Помилка відправки повідомлення про помилку: {e}")
 
 # ==================== НАЛАШТУВАННЯ ОБРОБНИКІВ ====================
 
@@ -335,7 +576,7 @@ def setup_handlers(app):
     
     # ConversationHandler для створення профілю
     profile_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start_profile_creation)],
+        entry_points=[CommandHandler('start', start)],
         states={
             PROFILE_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_age)],
             PROFILE_GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_gender)],
@@ -351,6 +592,14 @@ def setup_handlers(app):
     app.add_handler(profile_conv_handler)
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(CommandHandler("search", search_command))
+    app.add_handler(CommandHandler("likes", likes_command))
+    app.add_handler(CommandHandler("matches", matches_command))
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    
+    # Обробник вибору з меню
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_selection))
     
     # Обробник помилок
     app.add_error_handler(error_handler)
@@ -384,12 +633,11 @@ def main():
     # Запускаємо полінг
     logger.info("✅ Бот запущено в режимі полінгу")
     
-    # Простий запуск без складного управління event loop
     try:
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
-            close_loop=False  # Не закривати loop автоматично
+            close_loop=False
         )
     except KeyboardInterrupt:
         logger.info("⏹️ Бот зупинено користувачем")
