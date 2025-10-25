@@ -21,11 +21,16 @@ try:
     logger.info("✅ Використовується PostgreSQL база даних")
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту бази даних: {e}")
-    raise
+    # Спробуємо імпортувати резервну базу даних
+    try:
+        from database.models import db
+        logger.info("✅ Використовується SQLite база даних")
+    except ImportError:
+        logger.error("❌ Не вдалося імпортувати жодну базу даних")
+        raise
 
 try:
-    from config import ADMIN_ID
-    from config import TOKEN
+    from config import ADMIN_ID, TOKEN
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту конфігурації: {e}")
     raise
@@ -562,7 +567,7 @@ async def universal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(
             "❌ Команда не розпізнана. Оберіть пункт з меню:",
-                        reply_markup=get_main_menu(user.id)
+            reply_markup=get_main_menu(user.id)
         )
         
     except Exception as e:
@@ -765,27 +770,6 @@ def set_webhook_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Додайте цю функцію для тестування
-@app.route('/debug_views')
-def debug_views():
-    """Сторінка для дебагу переглядів"""
-    try:
-        from database_postgres import db
-        
-        # Отримуємо всі перегляди
-        db.cursor.execute('SELECT * FROM profile_views ORDER BY viewed_at DESC LIMIT 10')
-        views = db.cursor.fetchall()
-        
-        result = "<h1>Debug Profile Views</h1>"
-        result += f"<p>Total views in database: {len(views)}</p>"
-        
-        for view in views:
-            result += f"<p>Viewer: {view['viewer_user_id']} -> Viewed: {view['viewed_user_id']} at {view['viewed_at']}</p>"
-        
-        return result
-    except Exception as e:
-        return f"Error: {str(e)}"        
-
 @app.route('/check_webhook')
 def check_webhook():
     """Перевірити стан вебхука"""
@@ -800,45 +784,35 @@ def check_webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def safe_db_operation(func):
-    """Декоратор для безпечних операцій з базою даних"""
-    async def wrapper(update, context, *args, **kwargs):
-        try:
-            return await func(update, context, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"❌ Помилка бази даних в {func.__name__}: {e}")
-            if update and update.effective_user:
-                await update.message.reply_text(
-                    "❌ Тимчасова помилка бази даних. Спробуйте ще раз через кілька секунд.",
-                    reply_markup=get_main_menu(update.effective_user.id)
-                )
-    return wrapper        
-
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
 print("🔧 ДЕТАЛЬНА ІНФОРМАЦІЯ ПРО БАЗУ ДАНИХ")
 print("=" * 60)
 
 # Перевірка типу бази даних
-if 'postgres' in str(type(db)).lower():
-    print("✅ АКТИВНА БАЗА: PostgreSQL")
-    db_type = "PostgreSQL"
-else:
-    print("ℹ️ АКТИВНА БАЗА: SQLite")
-    db_type = "SQLite"
-
-# Тест базових функцій
 try:
-    user_count = db.get_users_count()
-    print(f"📊 Кількість користувачів: {user_count}")
-    
-    stats = db.get_statistics()
-    male, female, total_active, goals_stats = stats
-    print(f"📈 Статистика: {male} чол., {female} жін., {total_active} актив.")
-    
-    print("✅ Тест бази даних пройдено успішно")
+    if 'postgres' in str(type(db)).lower():
+        print("✅ АКТИВНА БАЗА: PostgreSQL")
+        db_type = "PostgreSQL"
+    else:
+        print("ℹ️ АКТИВНА БАЗА: SQLite")
+        db_type = "SQLite"
+
+    # Тест базових функцій
+    try:
+        user_count = db.get_users_count()
+        print(f"📊 Кількість користувачів: {user_count}")
+        
+        stats = db.get_statistics()
+        male, female, total_active, goals_stats = stats
+        print(f"📈 Статистика: {male} чол., {female} жін., {total_active} актив.")
+        
+        print("✅ Тест бази даних пройдено успішно")
+    except Exception as e:
+        print(f"❌ Помилка тесту бази даних: {e}")
+
 except Exception as e:
-    print(f"❌ Помилка тесту бази даних: {e}")
+    print(f"❌ Помилка перевірки бази даних: {e}")
 
 print("=" * 60)
 print("🚀 СЕРВЕР ГОТОВИЙ ДО РОБОТИ!")
