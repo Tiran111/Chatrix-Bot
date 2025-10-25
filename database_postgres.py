@@ -838,7 +838,8 @@ class Database:
         """Отримання переглядів профілю"""
         try:
             return self.fetch_safe('''
-                SELECT DISTINCT u.* FROM users u
+                SELECT DISTINCT u.*, pv.viewed_at 
+                FROM users u
                 JOIN profile_views pv ON u.id = pv.viewer_user_id
                 WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
                 AND u.telegram_id != %s
