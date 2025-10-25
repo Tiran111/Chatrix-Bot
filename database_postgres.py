@@ -205,8 +205,8 @@ class Database:
         self.execute_safe('''
             CREATE TABLE IF NOT EXISTS profile_views (
                 id SERIAL PRIMARY KEY,
-                viewer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                viewed_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                viewer_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                viewed_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                 viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -222,13 +222,19 @@ class Database:
     def fix_profile_views_table_if_needed(self):
         """Перевірка та виправлення таблиці profile_views при необхідності"""
         try:
-            # Перевіряємо чи існують правильні колонки
+            # Перевіряємо структуру таблиці
             self.execute_safe("""
                 SELECT column_name 
                 FROM information_schema.columns 
-                WHERE table_name = 'profile_views' AND column_name = 'viewer_id'
+                WHERE table_name = 'profile_views'
             """)
-            has_correct_columns = self.cursor.fetchone() is not None
+            columns = self.cursor.fetchall()
+            column_names = [col['column_name'] for col in columns]
+            
+            logger.info(f"🔍 Структура profile_views: {column_names}")
+            
+            # Перевіряємо чи є правильні колонки
+            has_correct_columns = 'viewer_user_id' in column_names and 'viewed_user_id' in column_names
             
             if not has_correct_columns:
                 logger.warning("⚠️ Таблиця profile_views має неправильні колонки. Виправляємо...")
@@ -250,8 +256,8 @@ class Database:
             self.execute_safe('''
                 CREATE TABLE profile_views (
                     id SERIAL PRIMARY KEY,
-                    viewer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                    viewed_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewer_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    viewed_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                     viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -814,7 +820,7 @@ class Database:
             
             # Додаємо перегляд - використовуємо правильні назви колонок
             if self.execute_safe('''
-                INSERT INTO profile_views (viewer_id, viewed_id, viewed_at)
+                INSERT INTO profile_views (viewer_user_id, viewed_user_id, viewed_at)
                 VALUES (
                     (SELECT id FROM users WHERE telegram_id = %s), 
                     (SELECT id FROM users WHERE telegram_id = %s),
@@ -833,8 +839,8 @@ class Database:
         try:
             return self.fetch_safe('''
                 SELECT DISTINCT u.* FROM users u
-                JOIN profile_views pv ON u.id = pv.viewer_id
-                WHERE pv.viewed_id = (SELECT id FROM users WHERE telegram_id = %s)
+                JOIN profile_views pv ON u.id = pv.viewer_user_id
+                WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
                 AND u.telegram_id != %s
                 ORDER BY pv.viewed_at DESC
                 LIMIT 50
@@ -864,30 +870,87 @@ class Database:
             logger.error(f"❌ Помилка отримання топу користувачів: {e}")
             return []
 
-    def update_user_rating(self, telegram_id, new_rating):
-        """Оновлення рейтингу користувача"""
+    def calculate_user_rating(self, telegram_id):
+        """Розрахунок рейтингу користувача"""
         try:
-            if self.execute_safe('UPDATE users SET rating = %s WHERE telegram_id = %s', (new_rating, telegram_id)):
-                return True
-            return False
+            user = self.get_user(telegram_id)
+            if not user:
+                return 5.0
+            
+            base_rating = 5.0
+            if user.get('age'):
+                base_rating += 0.5
+            if user.get('bio') and len(user.get('bio', '')) > 20:
+                base_rating += 0.5
+            if user.get('has_photo'):
+                base_rating += 1.0
+            
+            likes_bonus = min(user.get('likes_count', 0) * 0.1, 2.0)
+            base_rating += likes_bonus
+            
+            final_rating = min(max(base_rating, 1.0), 10.0)
+            
+            self.execute_safe('UPDATE users SET rating = %s WHERE telegram_id = %s', (final_rating, telegram_id))
+            
+            return final_rating
+            
         except Exception as e:
-            logger.error(f"❌ Помилка оновлення рейтингу: {e}")
+            logger.error(f"❌ Помилка розрахунку рейтингу: {e}")
+            return 5.0
+
+    def update_all_ratings(self):
+        """Оновлення всіх рейтингів"""
+        try:
+            users = self.get_all_active_users()
+            for user in users:
+                self.calculate_user_rating(user['telegram_id'])
+            logger.info("✅ Всі рейтинги оновлено")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка оновлення рейтингів: {e}")
             return False
 
-    def get_users_by_gender_and_age(self, gender, min_age, max_age, exclude_telegram_id):
-        """Отримання користувачів за статтю та віком"""
+    def cleanup_old_data(self):
+        """Очищення старих даних"""
         try:
-            return self.fetch_safe('''
-                SELECT * FROM users 
-                WHERE gender = %s 
-                AND age BETWEEN %s AND %s
-                AND telegram_id != %s
-                AND is_banned = FALSE
-                ORDER BY rating DESC, likes_count DESC
-            ''', (gender, min_age, max_age, exclude_telegram_id))
+            self.execute_safe('''
+                DELETE FROM likes 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM likes 
+                    GROUP BY from_user_id, to_user_id
+                )
+            ''')
+            
+            self.execute_safe('''
+                DELETE FROM matches 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM matches 
+                    GROUP BY user1_id, user2_id
+                )
+            ''')
+            
+            logger.info("✅ Старі дані очищено")
+            return True
         except Exception as e:
-            logger.error(f"❌ Помилка отримання користувачів за фільтрами: {e}")
-            return []
+            logger.error(f"❌ Помилка очищення даних: {e}")
+            return False
+
+    def reset_database(self):
+        """Скидання бази даних"""
+        try:
+            tables = ['profile_views', 'matches', 'likes', 'photos', 'users']
+            for table in tables:
+                self.execute_safe(f'DROP TABLE IF EXISTS {table} CASCADE')
+            
+            self.init_db()
+            
+            logger.info("✅ База даних скинута та перестворена")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Помилка скидання бази даних: {e}")
+            return False
 
     def get_users_by_city(self, city, exclude_telegram_id):
         """Отримання користувачів за містом"""
@@ -903,49 +966,22 @@ class Database:
             logger.error(f"❌ Помилка отримання користувачів за містом: {e}")
             return []
 
-    def get_compatible_users(self, user_telegram_id, limit=50):
-        """Отримання сумісних користувачів"""
+    def can_like_today(self, telegram_id):
+        """Перевірка чи може користувач ставити лайки сьогодні"""
         try:
-            user = self.get_user(user_telegram_id)
-            if not user:
-                return []
+            result = self.fetch_one_safe('''
+                SELECT COUNT(*) FROM likes 
+                WHERE from_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+                AND DATE(created_at) = CURRENT_DATE
+            ''', (telegram_id,))
+            likes_today = result['count'] if result else 0
             
-            seeking_gender = user.get('seeking_gender', 'all')
-            user_gender = user.get('gender')
-            user_age = user.get('age')
-            
-            # Базовий запит
-            query = '''
-                SELECT u.* FROM users u
-                WHERE u.telegram_id != %s
-                AND u.age IS NOT NULL
-                AND u.gender IS NOT NULL
-                AND u.is_banned = FALSE
-            '''
-            params = [user_telegram_id]
-            
-            # Фільтр за статтю
-            if seeking_gender != 'all':
-                query += ' AND u.gender = %s'
-                params.append(seeking_gender)
-            
-            # Фільтр за віком (якщо вказано)
-            if user_age:
-                # Шукаємо користувачів приблизно того ж віку (±5 років)
-                min_age = max(18, user_age - 5)
-                max_age = user_age + 5
-                query += ' AND u.age BETWEEN %s AND %s'
-                params.extend([min_age, max_age])
-            
-            # Сортування та ліміт
-            query += ' ORDER BY u.rating DESC, u.likes_count DESC LIMIT %s'
-            params.append(limit)
-            
-            return self.fetch_safe(query, params)
-            
+            if likes_today >= 50:
+                return False, f"Досягнуто ліміт лайків на сьогодні ({likes_today}/50)"
+            return True, f"Лайків сьогодні: {likes_today}/50"
         except Exception as e:
-            logger.error(f"❌ Помилка отримання сумісних користувачів: {e}")
-            return []
+            logger.error(f"❌ Помилка перевірки лайків: {e}")
+            return True, "Ліміт не перевірено"
 
     def close(self):
         """Закриття з'єднання з базою даних"""
