@@ -1,4 +1,4 @@
 bind = "0.0.0.0:10000"
-workers = 1  # Зменшити до 1 для уникнення конфліктів
+workers = 1
 timeout = 120
-preload_app = True
+preload_app = False  # Вимкнути preload для уникнення конфліктів

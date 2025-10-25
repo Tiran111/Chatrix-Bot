@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 import threading
 from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -7,7 +8,6 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, 
     filters, ConversationHandler
 )
-import asyncio
 
 # Налаштування логування
 logging.basicConfig(
@@ -423,12 +423,12 @@ def setup_handlers(app):
 
 # ==================== ІНІЦІАЛІЗАЦІЯ БОТА ====================
 
-def init_bot_sync():
-    """Синхронна ініціалізація бота"""
+async def init_bot_async():
+    """Асинхронна ініціалізація бота"""
     global application, bot_initialized
     
     try:
-        logger.info("🔄 Синхронна ініціалізація бота...")
+        logger.info("🔄 Асинхронна ініціалізація бота...")
         
         # Створюємо додаток
         application = Application.builder().token(TOKEN).build()
@@ -437,10 +437,13 @@ def init_bot_sync():
         setup_handlers(application)
         
         # Ініціалізуємо
-        application.initialize()
+        await application.initialize()
         
         # Встановлюємо вебхук
-        application.bot.set_webhook(WEBHOOK_URL)
+        await application.bot.set_webhook(WEBHOOK_URL)
+        
+        # Запускаємо бота
+        await application.start()
         
         bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано!")
@@ -451,6 +454,27 @@ def init_bot_sync():
         logger.error(f"❌ Помилка ініціалізації бота: {e}")
         bot_initialized = False
         return None
+
+def init_bot_sync():
+    """Синхронна обгортка для ініціалізації бота"""
+    global bot_initialized
+    
+    try:
+        # Створюємо новий event loop для цього потоку
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Запускаємо асинхронну ініціалізацію
+        loop.run_until_complete(init_bot_async())
+        
+        if bot_initialized:
+            logger.info("✅ Бот ініціалізовано в синхронному режимі")
+        else:
+            logger.error("❌ Не вдалося ініціалізувати бота")
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка синхронної ініціалізації: {e}")
+        bot_initialized = False
 
 # ==================== FLASK ROUTES ====================
 
@@ -492,9 +516,9 @@ def webhook():
             
         logger.info("📨 Отримано вебхук від Telegram")
         
-        # Обробляємо оновлення синхронно
+        # Обробляємо оновлення через update_queue
         update = Update.de_json(update_data, application.bot)
-        application.process_update(update)
+        application.update_queue.put_nowait(update)
         
         return 'ok', 200
         
@@ -504,17 +528,30 @@ def webhook():
 
 # ==================== ЗАПУСК СЕРВЕРА ====================
 
+def run_bot():
+    """Запуск бота в окремому потоці"""
+    init_bot_sync()
+
 def main():
     """Запуск програми"""
-    global bot_initialized
     
-    # Синхронна ініціалізація бота
-    init_bot_sync()
+    # Запускаємо бота в окремому потоці
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Чекаємо на ініціалізацію бота
+    import time
+    timeout = 10
+    start_time = time.time()
+    
+    while not bot_initialized and (time.time() - start_time) < timeout:
+        logger.info("⏳ Чекаємо на ініціалізацію бота...")
+        time.sleep(1)
     
     if bot_initialized:
         logger.info("✅ Бот успішно ініціалізовано!")
     else:
-        logger.error("❌ Не вдалося ініціалізувати бота")
+        logger.error("❌ Таймаут ініціалізації бота")
     
     # Запуск Flask сервера
     logger.info(f"🚀 Запуск сервера на порті {PORT}")
