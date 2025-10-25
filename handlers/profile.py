@@ -172,42 +172,41 @@ async def handle_profile_message(update: Update, context: ContextTypes.DEFAULT_T
         else:
             await update.message.reply_text("❌ Оберіть ціль з кнопок")
 
-    # В функції handle_profile_message, коли заповнюється біо:
-elif state == States.PROFILE_BIO:
-    if len(text) >= 10:
-        user_profiles[user.id]['bio'] = text
-        
-        logger.info(f"🔧 [PROFILE] Користувач {user.id} заповнив біо")
-        
-        # Зберігаємо профіль
-        success = db.update_or_create_user_profile(
-            telegram_id=user.id,
-            age=user_profiles[user.id]['age'],
-            gender=user_profiles[user.id]['gender'],
-            city=user_profiles[user.id]['city'],
-            seeking_gender=user_profiles[user.id].get('seeking_gender', 'all'),
-            goal=user_profiles[user.id]['goal'],
-            bio=user_profiles[user.id]['bio']
-        )
-        
-        if success:
-            # ОБОВ'ЯЗКОВО переходимо до додавання фото
-            user_states[user.id] = States.ADD_MAIN_PHOTO
+    elif state == States.PROFILE_BIO:
+        if len(text) >= 10:
+            user_profiles[user.id]['bio'] = text
             
-            await update.message.reply_text(
-                "🎉 *Профіль створено!*\n\n"
-                "📸 *Тепер обов'язково додайте фото для вашого профілю:*\n\n"
-                "• Надішліть фото як звичайне повідомлення\n"  
-                "• Можна додати до 3 фото\n"
-                "• Перше фото буде основним\n\n"
-                "📷 *Без фото ви не зможете шукати інші анкети!*",
-                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
-                parse_mode='Markdown'
+            logger.info(f"🔧 [PROFILE] Користувач {user.id} заповнив біо")
+            
+            # Зберігаємо профіль
+            success = db.update_or_create_user_profile(
+                telegram_id=user.id,
+                age=user_profiles[user.id]['age'],
+                gender=user_profiles[user.id]['gender'],
+                city=user_profiles[user.id]['city'],
+                seeking_gender=user_profiles[user.id].get('seeking_gender', 'all'),
+                goal=user_profiles[user.id]['goal'],
+                bio=user_profiles[user.id]['bio']
             )
+            
+            if success:
+                # ОБОВ'ЯЗКОВО переходимо до додавання фото
+                user_states[user.id] = States.ADD_MAIN_PHOTO
+                
+                await update.message.reply_text(
+                    "🎉 *Профіль створено!*\n\n"
+                    "📸 *Тепер обов'язково додайте фото для вашого профілю:*\n\n"
+                    "• Надішліть фото як звичайне повідомлення\n"  
+                    "• Можна додати до 3 фото\n"
+                    "• Перше фото буде основним\n\n"
+                    "📷 *Без фото ви не зможете шукати інші анкети!*",
+                    reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Завершити")]], resize_keyboard=True),
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ Помилка збереження профілю")
         else:
-            await update.message.reply_text("❌ Помилка збереження профілю")
-    else:
-        await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
+            await update.message.reply_text("❌ Опис закороткий. Мінімум 10 символів.")
 
 async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка додавання фото"""
@@ -226,14 +225,22 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Помилка створення профілю")
             return
     
-    # Обробка кнопки "Пропустити"
-    if update.message.text == "🔙 Пропустити":
+    # Обробка кнопки "Завершити"
+    if update.message.text == "🔙 Завершити":
         user_states[user.id] = States.START
         user_profiles.pop(user.id, None)
-        await update.message.reply_text(
-            "✅ Можете додати фото пізніше через '👤 Мій профіль' → '📝 Редагувати'",
-            reply_markup=get_main_menu(user.id)
-        )
+        photos_count = len(db.get_profile_photos(user.id))
+        
+        if photos_count > 0:
+            await update.message.reply_text(
+                f"🎉 Профіль створено! Додано {photos_count} фото",
+                reply_markup=get_main_menu(user.id)
+            )
+        else:
+            await update.message.reply_text(
+                "✅ Профіль створено! Можете додати фото пізніше через '👤 Мій профіль'",
+                reply_markup=get_main_menu(user.id)
+            )
         return
     
     # Обробка фото
@@ -266,23 +273,6 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "❌ Помилка додавання фото. Спробуйте ще раз або натисніть '🔙 Завершити'",
                 reply_markup=ReplyKeyboardMarkup([['🔙 Завершити']], resize_keyboard=True)
-            )
-    
-    elif user_states.get(user.id) == States.ADD_MAIN_PHOTO and update.message.text == "🔙 Завершити":
-        # Оновлюємо стан та показуємо головне меню
-        user_states[user.id] = States.START
-        user_profiles.pop(user.id, None)
-        photos_count = len(db.get_profile_photos(user.id))
-        
-        if photos_count > 0:
-            await update.message.reply_text(
-                f"🎉 Профіль створено! Додано {photos_count} фото",
-                reply_markup=get_main_menu(user.id)
-            )
-        else:
-            await update.message.reply_text(
-                "✅ Профіль створено! Можете додати фото пізніше через '👤 Мій профіль'",
-                reply_markup=get_main_menu(user.id)
             )
     
     elif user_states.get(user.id) == States.ADD_MAIN_PHOTO:

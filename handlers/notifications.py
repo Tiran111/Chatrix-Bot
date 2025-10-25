@@ -22,6 +22,7 @@ class NotificationSystem:
             to_user = db.get_user(to_user_id)
             
             if not from_user or not to_user:
+                logger.error(f"❌ Користувачів не знайдено для сповіщення про лайк")
                 return
             
             # Отримуємо актуальний рейтинг
@@ -49,48 +50,59 @@ class NotificationSystem:
             user1 = db.get_user(user1_id)
             user2 = db.get_user(user2_id)
             
-            if user1 and user2:
-                # Отримуємо username для кнопок
-                user1_username = user1.get('username')
-                user2_username = user2.get('username')
-                
-                # Сповіщаємо першому користувачу
-                if user2_username:
-                    keyboard1 = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user2_username}")]
-                    ])
-                    await context.bot.send_message(
-                        chat_id=user1_id,
-                        text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
-                        reply_markup=keyboard1,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await context.bot.send_message(
-                        chat_id=user1_id,
-                        text=f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\nℹ️ *У цього користувача немає username*",
-                        parse_mode='Markdown'
-                    )
-                
-                # Сповіщаємо другому користувачу
-                if user1_username:
-                    keyboard2 = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user1_username}")]
-                    ])
-                    await context.bot.send_message(
-                        chat_id=user2_id,
-                        text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\n💬 *Тепер ви можете почати спілкування!*",
-                        reply_markup=keyboard2,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await context.bot.send_message(
-                        chat_id=user2_id,
-                        text=f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\nℹ️ *У цього користувача немає username*",
-                        parse_mode='Markdown'
-                    )
+            if not user1 or not user2:
+                logger.error(f"❌ Користувачів не знайдено для сповіщення про матч")
+                return
+            
+            # Отримуємо username для кнопок
+            user1_username = user1.get('username')
+            user2_username = user2.get('username')
+            
+            # Сповіщаємо першому користувачу
+            match_message_user1 = f"💕 *У вас новий матч!*\n\nВи та {user2['first_name']} вподобали один одного!\n\n"
+            
+            if user2_username:
+                keyboard1 = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user2_username}")]
+                ])
+                match_message_user1 += "💬 *Тепер ви можете почати спілкування!*"
+                await context.bot.send_message(
+                    chat_id=user1_id,
+                    text=match_message_user1,
+                    reply_markup=keyboard1,
+                    parse_mode='Markdown'
+                )
+            else:
+                match_message_user1 += "ℹ️ *У цього користувача немає username*"
+                await context.bot.send_message(
+                    chat_id=user1_id,
+                    text=match_message_user1,
+                    parse_mode='Markdown'
+                )
+            
+            # Сповіщаємо другому користувачу
+            match_message_user2 = f"💕 *У вас новий матч!*\n\nВи та {user1['first_name']} вподобали один одного!\n\n"
+            
+            if user1_username:
+                keyboard2 = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💬 Написати в Telegram", url=f"https://t.me/{user1_username}")]
+                ])
+                match_message_user2 += "💬 *Тепер ви можете почати спілкування!*"
+                await context.bot.send_message(
+                    chat_id=user2_id,
+                    text=match_message_user2,
+                    reply_markup=keyboard2,
+                    parse_mode='Markdown'
+                )
+            else:
+                match_message_user2 += "ℹ️ *У цього користувача немає username*"
+                await context.bot.send_message(
+                    chat_id=user2_id,
+                    text=match_message_user2,
+                    parse_mode='Markdown'
+                )
                     
-                logger.info(f"✅ Сповіщення про матч відправлено {user1_id} та {user2_id}")
+            logger.info(f"✅ Сповіщення про матч відправлено {user1_id} та {user2_id}")
         except Exception as e:
             logger.error(f"❌ Помилка сповіщення про матч: {e}")
     
@@ -216,7 +228,7 @@ class NotificationSystem:
             new_matches = self.get_new_matches_today(user_id)
             profile_views = self.get_profile_views_today(user_id)
             
-            if new_likes > 0 or new_matches > 0:
+            if new_likes > 0 or new_matches > 0 or profile_views > 0:
                 message = f"📊 *Ваша щоденна статистика:*\n\n"
                 if new_likes > 0:
                     message += f"💕 Нові лайки: {new_likes}\n"
@@ -302,7 +314,7 @@ class NotificationSystem:
             
             db.cursor.execute('''
                 SELECT COUNT(*) FROM profile_views 
-                WHERE viewed_user_id = %s AND DATE(viewed_at) = CURRENT_DATE
+                WHERE viewed_id = %s AND DATE(viewed_at) = CURRENT_DATE
             ''', (user['id'],))
             result = db.cursor.fetchone()
             return result['count'] if result else 0
