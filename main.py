@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import threading
+import atexit
 from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -39,6 +40,7 @@ PORT = int(os.environ.get('PORT', 10000))
 # Глобальний об'єкт бота
 application = None
 bot_initialized = False
+bot_loop = None
 init_lock = threading.Lock()
 
 # Стани для ConversationHandler
@@ -426,10 +428,13 @@ def setup_handlers(app):
 
 async def init_bot_async():
     """Асинхронна ініціалізація бота"""
-    global application, bot_initialized
+    global application, bot_initialized, bot_loop
     
     try:
         logger.info("🔄 Асинхронна ініціалізація бота...")
+        
+        # Зберігаємо поточний event loop
+        bot_loop = asyncio.get_event_loop()
         
         # Створюємо додаток
         application = Application.builder().token(TOKEN).build()
@@ -458,7 +463,7 @@ async def init_bot_async():
 
 def init_bot_sync():
     """Синхронна обгортка для ініціалізації бота"""
-    global bot_initialized
+    global bot_initialized, bot_loop
     
     with init_lock:
         if bot_initialized:
@@ -467,11 +472,11 @@ def init_bot_sync():
             
         try:
             # Створюємо новий event loop для цього потоку
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            bot_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(bot_loop)
             
             # Запускаємо асинхронну ініціалізацію
-            loop.run_until_complete(init_bot_async())
+            bot_loop.run_until_complete(init_bot_async())
             
             if bot_initialized:
                 logger.info("✅ Бот ініціалізовано в синхронному режимі")
@@ -481,6 +486,30 @@ def init_bot_sync():
         except Exception as e:
             logger.error(f"❌ Помилка синхронної ініціалізації: {e}")
             bot_initialized = False
+
+async def shutdown_bot_async():
+    """Коректне завершення роботи бота"""
+    global application, bot_initialized
+    
+    if application and bot_initialized:
+        try:
+            logger.info("🔄 Завершення роботи бота...")
+            await application.stop()
+            await application.shutdown()
+            bot_initialized = False
+            logger.info("✅ Бот коректно завершив роботу")
+        except Exception as e:
+            logger.error(f"❌ Помилка завершення роботи бота: {e}")
+
+def shutdown_bot_sync():
+    """Синхронне завершення роботи бота"""
+    global bot_loop
+    
+    if bot_loop:
+        try:
+            bot_loop.run_until_complete(shutdown_bot_async())
+        except Exception as e:
+            logger.error(f"❌ Помилка синхронного завершення: {e}")
 
 def ensure_bot_initialized():
     """Переконатися, що бот ініціалізований"""
@@ -548,23 +577,16 @@ def webhook():
 def main():
     """Запуск програми"""
     
-    # Запускаємо бота в окремому потоці
-    bot_thread = threading.Thread(target=init_bot_sync, daemon=True)
-    bot_thread.start()
+    # Реєструємо функцію завершення
+    atexit.register(shutdown_bot_sync)
     
-    # Чекаємо на ініціалізацію бота
-    import time
-    timeout = 10
-    start_time = time.time()
-    
-    while not bot_initialized and (time.time() - start_time) < timeout:
-        logger.info("⏳ Чекаємо на ініціалізацію бота...")
-        time.sleep(1)
+    # Запускаємо бота
+    init_bot_sync()
     
     if bot_initialized:
         logger.info("✅ Бот успішно ініціалізовано!")
     else:
-        logger.error("❌ Таймаут ініціалізації бота")
+        logger.error("❌ Не вдалося ініціалізувати бота")
     
     # Запуск Flask сервера
     logger.info(f"🚀 Запуск сервера на порті {PORT}")
