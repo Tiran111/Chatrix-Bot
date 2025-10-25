@@ -1,7 +1,6 @@
 # bot.py - Простий бот тільки з полінгом
 import logging
 import asyncio
-import signal
 import sys
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -32,9 +31,6 @@ except ImportError as e:
 
 # Стани для ConversationHandler
 PROFILE_AGE, PROFILE_GENDER, PROFILE_CITY, PROFILE_SEEKING_GENDER, PROFILE_GOAL, PROFILE_BIO = range(6)
-
-# Глобальна змінна для бота
-application = None
 
 # ==================== ФУНКЦІЇ ПРОФІЛЮ ====================
 
@@ -359,28 +355,10 @@ def setup_handlers(app):
     # Обробник помилок
     app.add_error_handler(error_handler)
 
-# ==================== УПРАВЛІННЯ EVENT LOOP ====================
-
-async def shutdown(signal, loop):
-    """Коректне завершення роботи"""
-    logger.info(f"🔄 Отримано сигнал {signal.name}...")
-    global application
-    
-    if application:
-        logger.info("🔄 Зупинка бота...")
-        await application.stop()
-        await application.shutdown()
-        logger.info("✅ Бот зупинено")
-    
-    logger.info("🔄 Зупинка event loop...")
-    loop.stop()
-
 # ==================== ЗАПУСК БОТА ====================
 
-async def main():
+def main():
     """Запуск бота"""
-    global application
-    
     logger.info("🚀 Запуск Chatrix Bot...")
     
     # Перевірка токена
@@ -403,34 +381,20 @@ async def main():
     # Додаємо обробники
     setup_handlers(application)
     
-    # Налаштовуємо обробку сигналів
-    loop = asyncio.get_event_loop()
-    signals = (signal.SIGTERM, signal.SIGINT)
-    for s in signals:
-        loop.add_signal_handler(
-            s, lambda s=s: asyncio.create_task(shutdown(s, loop))
-        )
-    
     # Запускаємо полінг
     logger.info("✅ Бот запущено в режимі полінгу")
-    await application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
-
-if __name__ == '__main__':
+    
+    # Простий запуск без складного управління event loop
     try:
-        # Використовуємо uvloop для кращої продуктивності (якщо встановлено)
-        try:
-            import uvloop
-            uvloop.install()
-            logger.info("✅ Використовується uvloop")
-        except ImportError:
-            logger.info("ℹ️ uvloop не встановлено, використовується стандартний asyncio")
-        
-        asyncio.run(main())
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False  # Не закривати loop автоматично
+        )
     except KeyboardInterrupt:
         logger.info("⏹️ Бот зупинено користувачем")
     except Exception as e:
-        logger.error(f"❌ Критична помилка: {e}")
-        sys.exit(1)
+        logger.error(f"❌ Помилка полінгу: {e}")
+
+if __name__ == '__main__':
+    main()
