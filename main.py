@@ -779,6 +779,20 @@ def check_webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def safe_db_operation(func):
+    """Декоратор для безпечних операцій з базою даних"""
+    async def wrapper(update, context, *args, **kwargs):
+        try:
+            return await func(update, context, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"❌ Помилка бази даних в {func.__name__}: {e}")
+            if update and update.effective_user:
+                await update.message.reply_text(
+                    "❌ Тимчасова помилка бази даних. Спробуйте ще раз через кілька секунд.",
+                    reply_markup=get_main_menu(update.effective_user.id)
+                )
+    return wrapper        
+
 # ==================== ДЕТАЛЬНА ВІДЛАДКА БАЗИ ДАНИХ ====================
 print("=" * 60)
 print("🔧 ДЕТАЛЬНА ІНФОРМАЦІЯ ПРО БАЗУ ДАНИХ")
