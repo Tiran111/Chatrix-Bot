@@ -294,61 +294,76 @@ async def handle_main_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати профіль користувача"""
     user = update.effective_user
-    user_data = db.get_user(user.id)
     
-    if not user_data or not user_data.get('age'):
-        await update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
-        return
-    
-    photos = db.get_profile_photos(user.id)
-    
-    # Детальне логування для дебагу
-    logger.info(f"🔧 [SHOW PROFILE] Дані користувача {user.id}: {user_data}")
-    
-    # Форматування профілю
-    gender_display = "👨 Чоловік" if user_data['gender'] == 'male' else "👩 Жінка"
-    
-    seeking_display = {
-        'female': '👩 Дівчину',
-        'male': '👨 Хлопця',
-        'all': '👫 Всіх'
-    }.get(user_data.get('seeking_gender', 'all'), '👫 Всіх')
-    
-    goal_display = {
-        'Серйозні стосунки': '💞 Серйозні стосунки',
-        'Дружба': '👥 Дружба',
-        'Разові зустрічі': '🎉 Разові зустрічі',
-        'Активний відпочинок': '🏃 Активний відпочинок'
-    }.get(user_data['goal'], user_data['goal'])
-    
-    profile_text = f"""👤 *Ваш профіль*
+    try:
+        user_data = db.get_user(user.id)
+        
+        if not user_data:
+            await update.message.reply_text("❌ У вас ще немає профілю", reply_markup=get_main_menu(user.id))
+            return
+        
+        # Перевіряємо чи профіль заповнений
+        if not user_data.get('age') or not user_data.get('gender') or not user_data.get('city'):
+            await update.message.reply_text(
+                "❌ Ваш профіль не заповнений повністю!\n\n"
+                "📝 Натисніть '📝 Заповнити профіль' щоб завершити реєстрацію",
+                reply_markup=get_main_menu(user.id)
+            )
+            return
+        
+        photos = db.get_profile_photos(user.id)
+        
+        # Форматування профілю
+        gender_display = "👨 Чоловік" if user_data['gender'] == 'male' else "👩 Жінка"
+        
+        seeking_display = {
+            'female': '👩 Дівчину',
+            'male': '👨 Хлопця',
+            'all': '👫 Всіх'
+        }.get(user_data.get('seeking_gender', 'all'), '👫 Всіх')
+        
+        goal_display = {
+            'Серйозні стосунки': '💞 Серйозні стосунки',
+            'Дружба': '👥 Дружба',
+            'Разові зустрічі': '🎉 Разові зустрічі',
+            'Активний відпочинок': '🏃 Активний відпочинок'
+        }.get(user_data.get('goal', 'Не вказано'), user_data.get('goal', 'Не вказано'))
+        
+        profile_text = f"""👤 *Ваш профіль*
 
 *Ім'я:* {user.first_name}
-*Вік:* {user_data['age']} років
+*Вік:* {user_data.get('age', 'Не вказано')} років
 *Стать:* {gender_display}
-*Місто:* {user_data['city']}
+*Місто:* {user_data.get('city', 'Не вказано')}
 *Шукаю:* {seeking_display}  
 *Ціль:* {goal_display}
 
 *Про себе:*
-{user_data['bio']}
+{user_data.get('bio', 'Не вказано')}
 
 *Фото:* {len(photos)}/3
 ❤️ *Лайків:* {user_data.get('likes_count', 0)}"""
-    
-    # Відправляємо фото з описом
-    if photos:
-        await update.message.reply_photo(
-            photo=photos[0], 
-            caption=profile_text,
-            reply_markup=get_main_menu(user.id),
-            parse_mode='Markdown'
-        )
-    else:
+        
+        # Відправляємо фото з описом
+        if photos:
+            await update.message.reply_photo(
+                photo=photos[0], 
+                caption=profile_text,
+                reply_markup=get_main_menu(user.id),
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                profile_text,
+                reply_markup=get_main_menu(user.id),
+                parse_mode='Markdown'
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Помилка показу профілю: {e}", exc_info=True)
         await update.message.reply_text(
-            profile_text,
-            reply_markup=get_main_menu(user.id),
-            parse_mode='Markdown'
+            "❌ Помилка завантаження профілю. Спробуйте ще раз.",
+            reply_markup=get_main_menu(user.id)
         )
 
 async def start_edit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):

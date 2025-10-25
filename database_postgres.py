@@ -710,51 +710,49 @@ class Database:
             return []
 
     def add_profile_view(self, viewer_id, viewed_id):
-        """Додавання перегляду профілю"""
-        try:
-            # Перевіряємо чи це не один і той же користувач
-            if viewer_id == viewed_id:
-                return False
-                
-            # Перевіряємо чи існують користувачі
-            viewer = self.get_user(viewer_id)
-            viewed = self.get_user(viewed_id)
-            
-            if not viewer or not viewed:
-                return False
-            
-            # Додаємо перегляд
-            if self.execute_safe('''
-                INSERT INTO profile_views (viewer_user_id, viewed_user_id, viewed_at)
-                VALUES (
-                    (SELECT id FROM users WHERE telegram_id = %s), 
-                    (SELECT id FROM users WHERE telegram_id = %s),
-                    CURRENT_TIMESTAMP
-                )
-                ON CONFLICT (viewer_user_id, viewed_user_id) DO UPDATE 
-                SET viewed_at = CURRENT_TIMESTAMP
-            ''', (viewer_id, viewed_id)):
-                logger.info(f"✅ Додано перегляд: {viewer_id} -> {viewed_id}")
-                return True
+    """Додавання перегляду профілю"""
+    try:
+        # Перевіряємо чи це не один і той же користувач
+        if viewer_id == viewed_id:
             return False
-        except Exception as e:
-            logger.error(f"❌ Помилка додавання перегляду: {e}")
+            
+        # Перевіряємо чи існують користувачі
+        viewer = self.get_user(viewer_id)
+        viewed = self.get_user(viewed_id)
+        
+        if not viewer or not viewed:
             return False
+        
+        # Додаємо перегляд
+        if self.execute_safe('''
+            INSERT INTO profile_views (viewer_user_id, viewed_user_id, viewed_at)
+            VALUES (
+                (SELECT id FROM users WHERE telegram_id = %s), 
+                (SELECT id FROM users WHERE telegram_id = %s),
+                CURRENT_TIMESTAMP
+            )
+        ''', (viewer_id, viewed_id)):
+            logger.info(f"✅ Додано перегляд: {viewer_id} -> {viewed_id}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"❌ Помилка додавання перегляду: {e}")
+        return False
 
-    def get_profile_views(self, telegram_id):
-        """Отримання переглядів профілю"""
-        try:
-            return self.fetch_safe('''
-                SELECT DISTINCT u.* FROM users u
-                JOIN profile_views pv ON u.id = pv.viewer_user_id
-                WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
-                AND u.telegram_id != %s
-                ORDER BY pv.viewed_at DESC
-                LIMIT 50
-            ''', (telegram_id, telegram_id))
-        except Exception as e:
-            logger.error(f"❌ Помилка отримання переглядів: {e}")
-            return []
+def get_profile_views(self, telegram_id):
+    """Отримання переглядів профілю"""
+    try:
+        return self.fetch_safe('''
+            SELECT DISTINCT u.* FROM users u
+            JOIN profile_views pv ON u.id = pv.viewer_user_id
+            WHERE pv.viewed_user_id = (SELECT id FROM users WHERE telegram_id = %s)
+            AND u.telegram_id != %s
+            ORDER BY pv.viewed_at DESC
+            LIMIT 50
+        ''', (telegram_id, telegram_id))
+    except Exception as e:
+        logger.error(f"❌ Помилка отримання переглядів: {e}")
+        return []
 
     def get_top_users_by_rating(self, limit=10, gender=None):
         """Отримання топу користувачів за рейтингом"""

@@ -765,6 +765,27 @@ def set_webhook_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Додайте цю функцію для тестування
+@app.route('/debug_views')
+def debug_views():
+    """Сторінка для дебагу переглядів"""
+    try:
+        from database_postgres import db
+        
+        # Отримуємо всі перегляди
+        db.cursor.execute('SELECT * FROM profile_views ORDER BY viewed_at DESC LIMIT 10')
+        views = db.cursor.fetchall()
+        
+        result = "<h1>Debug Profile Views</h1>"
+        result += f"<p>Total views in database: {len(views)}</p>"
+        
+        for view in views:
+            result += f"<p>Viewer: {view['viewer_user_id']} -> Viewed: {view['viewed_user_id']} at {view['viewed_at']}</p>"
+        
+        return result
+    except Exception as e:
+        return f"Error: {str(e)}"        
+
 @app.route('/check_webhook')
 def check_webhook():
     """Перевірити стан вебхука"""

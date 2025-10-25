@@ -159,10 +159,13 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
         
         context.user_data['current_profile_id'] = telegram_id
         
-        # ДОДАЄМО ПЕРЕГЛЯД ПРОФІЛЮ
+        # ДОДАЄМО ПЕРЕГЛЯД ПРОФІЛЮ (тільки якщо це не той самий користувач)
         if telegram_id and telegram_id != user.id:
-            db.add_profile_view(user.id, telegram_id)
-            logger.info(f"👀 Додано перегляд профілю: {user.id} -> {telegram_id}")
+            success = db.add_profile_view(user.id, telegram_id)
+            if success:
+                logger.info(f"👀 Додано перегляд профілю: {user.id} -> {telegram_id}")
+            else:
+                logger.error(f"❌ Не вдалося додати перегляд: {user.id} -> {telegram_id}")
         
         main_photo = db.get_main_photo(telegram_id)
         
@@ -798,6 +801,8 @@ async def show_profile_views(update: Update, context: CallbackContext):
         
         viewers = db.get_profile_views(user.id)
         
+        logger.info(f"🔍 [PROFILE VIEWS] Для користувача {user.id} знайдено {len(viewers)} переглядів")
+        
         if viewers:
             # Зберігаємо переглядачів у контексті
             context.user_data['profile_viewers'] = viewers
@@ -814,7 +819,11 @@ async def show_profile_views(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text(
                 "😔 Вас ще ніхто не переглядав\n\n"
-                "💡 *Порада:* Активніше шукайте анкети та ставте лайки - це збільшить вашу видимість!",
+                "💡 *Порада:*\n"
+                "• Активніше шукайте анкети\n"
+                "• Ставте лайки\n" 
+                "• Заповніть профіль повністю\n"
+                "• Додайте якісні фото",
                 reply_markup=get_main_menu(user.id),
                 parse_mode='Markdown'
             )
