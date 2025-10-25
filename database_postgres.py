@@ -109,12 +109,18 @@ class Database:
             # Додавання відсутніх стовпців, якщо потрібно
             columns_to_add = [
                 "ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0",
-                "ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE"
+                "ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE",
+                "ADD COLUMN IF NOT EXISTS is_main BOOLEAN DEFAULT FALSE"
             ]
             
             for column_sql in columns_to_add:
                 try:
-                    self.cursor.execute(f'ALTER TABLE users {column_sql}')
+                    if "is_main" in column_sql:
+                        # Додаємо колонку is_main до таблиці photos
+                        self.cursor.execute(f'ALTER TABLE photos {column_sql}')
+                    else:
+                        # Додаємо колонки до таблиці users
+                        self.cursor.execute(f'ALTER TABLE users {column_sql}')
                 except Exception as e:
                     logger.warning(f"⚠️ Не вдалося додати стовпець: {e}")
             
@@ -270,8 +276,8 @@ class Database:
             logger.error(f"❌ Помилка отримання профілю {telegram_id}: {e}")
             return None, False
 
-    def add_profile_photo(self, telegram_id, file_id, is_main=False):
-        """Додавання фото до профілю"""
+    def add_user_photo(self, telegram_id, file_id, is_main=False):
+        """Додавання фото користувача до бази даних"""
         try:
             # Отримуємо ID користувача
             self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
@@ -281,13 +287,14 @@ class Database:
                 logger.error(f"❌ Користувача {telegram_id} не знайдено для додавання фото")
                 return False
             
-            # Перевіряємо кількість фото
+            # Перевіряємо кількість фото користувача
             self.cursor.execute('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user['id'],))
-            photo_count = self.cursor.fetchone()['count']
+            result = self.cursor.fetchone()
+            photo_count = result['count'] if result else 0
             
-            if photo_count >= 3:
-                logger.warning(f"⚠️ Користувач {telegram_id} вже має максимальну кількість фото")
-                return False
+            # Якщо це перше фото, автоматично робимо його основним
+            if photo_count == 0:
+                is_main = True
             
             # Додаємо фото
             self.cursor.execute('''
@@ -295,8 +302,14 @@ class Database:
                 VALUES (%s, %s, %s)
             ''', (user['id'], file_id, is_main))
             
+            # Оновлюємо прапорець has_photo у користувача
+            self.cursor.execute('''
+                UPDATE users SET has_photo = TRUE 
+                WHERE telegram_id = %s
+            ''', (telegram_id,))
+            
             self.conn.commit()
-            logger.info(f"✅ Фото додано для користувача {telegram_id}")
+            logger.info(f"✅ Фото додано для користувача {telegram_id}, is_main: {is_main}")
             return True
             
         except Exception as e:
@@ -308,7 +321,7 @@ class Database:
         """Отримання фото профілю"""
         try:
             self.cursor.execute('''
-                SELECT p.file_id FROM photos p
+                SELECT p.file_id, p.is_main FROM photos p
                 JOIN users u ON p.user_id = u.id
                 WHERE u.telegram_id = %s
                 ORDER BY p.is_main DESC, p.created_at ASC
@@ -322,11 +335,97 @@ class Database:
     def get_main_photo(self, telegram_id):
         """Отримання головного фото"""
         try:
-            photos = self.get_profile_photos(telegram_id)
-            return photos[0] if photos else None
+            self.cursor.execute('''
+                SELECT p.file_id FROM photos p
+                JOIN users u ON p.user_id = u.id
+                WHERE u.telegram_id = %s AND p.is_main = TRUE
+                ORDER BY p.created_at ASC
+                LIMIT 1
+            ''', (telegram_id,))
+            result = self.cursor.fetchone()
+            return result['file_id'] if result else None
         except Exception as e:
             logger.error(f"❌ Помилка отримання головного фото для {telegram_id}: {e}")
             return None
+
+    def set_main_photo(self, telegram_id, file_id):
+        """Встановлення головного фото"""
+        try:
+            # Отримуємо ID користувача
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+            user = self.cursor.fetchone()
+            
+            if not user:
+                return False
+            
+            # Спочатку скидаємо всі is_main на False
+            self.cursor.execute('''
+                UPDATE photos SET is_main = FALSE 
+                WHERE user_id = %s
+            ''', (user['id'],))
+            
+            # Потім встановлюємо обране фото як головне
+            self.cursor.execute('''
+                UPDATE photos SET is_main = TRUE 
+                WHERE user_id = %s AND file_id = %s
+            ''', (user['id'], file_id))
+            
+            self.conn.commit()
+            logger.info(f"✅ Головне фото оновлено для {telegram_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка встановлення головного фото для {telegram_id}: {e}")
+            self.conn.rollback()
+            return False
+
+    def delete_photo(self, telegram_id, file_id):
+        """Видалення фото"""
+        try:
+            # Отримуємо ID користувача
+            self.cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (telegram_id,))
+            user = self.cursor.fetchone()
+            
+            if not user:
+                return False
+            
+            # Видаляємо фото
+            self.cursor.execute('''
+                DELETE FROM photos 
+                WHERE user_id = %s AND file_id = %s
+            ''', (user['id'], file_id))
+            
+            # Перевіряємо чи залишилися фото
+            self.cursor.execute('SELECT COUNT(*) FROM photos WHERE user_id = %s', (user['id'],))
+            result = self.cursor.fetchone()
+            remaining_photos = result['count'] if result else 0
+            
+            # Якщо фото не залишилося, оновлюємо has_photo
+            if remaining_photos == 0:
+                self.cursor.execute('''
+                    UPDATE users SET has_photo = FALSE 
+                    WHERE telegram_id = %s
+                ''', (telegram_id,))
+            # Якщо видалили головне фото, встановлюємо нове головне
+            else:
+                self.cursor.execute('''
+                    SELECT file_id FROM photos 
+                    WHERE user_id = %s 
+                    ORDER BY created_at ASC 
+                    LIMIT 1
+                ''', (user['id'],))
+                new_main = self.cursor.fetchone()
+                if new_main:
+                    self.set_main_photo(telegram_id, new_main['file_id'])
+            
+            self.conn.commit()
+            logger.info(f"✅ Фото видалено для {telegram_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Помилка видалення фото для {telegram_id}: {e}")
+            self.conn.rollback()
+            return False
 
     def get_users_count(self):
         """Отримання загальної кількості користувачів"""

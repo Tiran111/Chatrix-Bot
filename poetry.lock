@@ -1,4 +1,0 @@
-echo "" > poetry.lock
-git add poetry.lock
-git commit -m "Add empty poetry.lock"
-git push
