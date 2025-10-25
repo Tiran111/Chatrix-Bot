@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 import threading
-import atexit
+import time
 from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -34,14 +34,12 @@ except ImportError as e:
     raise
 
 # Глобальні змінні
-WEBHOOK_URL = "https://chatrix-bot-4m1p.onrender.com/webhook"
 PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальний об'єкт бота
 application = None
 bot_initialized = False
-bot_loop = None
-init_lock = threading.Lock()
+polling_thread = None
 
 # Стани для ConversationHandler
 PROFILE_AGE, PROFILE_GENDER, PROFILE_CITY, PROFILE_SEEKING_GENDER, PROFILE_GOAL, PROFILE_BIO = range(6)
@@ -426,15 +424,12 @@ def setup_handlers(app):
 
 # ==================== ІНІЦІАЛІЗАЦІЯ БОТА ====================
 
-async def init_bot_async():
-    """Асинхронна ініціалізація бота"""
-    global application, bot_initialized, bot_loop
+async def run_polling():
+    """Запуск полінгу бота"""
+    global application, bot_initialized
     
     try:
-        logger.info("🔄 Асинхронна ініціалізація бота...")
-        
-        # Зберігаємо поточний event loop
-        bot_loop = asyncio.get_event_loop()
+        logger.info("🔄 Запуск бота в режимі полінгу...")
         
         # Створюємо додаток
         application = Application.builder().token(TOKEN).build()
@@ -442,90 +437,52 @@ async def init_bot_async():
         # Додаємо обробники
         setup_handlers(application)
         
-        # Ініціалізуємо
-        await application.initialize()
-        
-        # Встановлюємо вебхук
-        await application.bot.set_webhook(WEBHOOK_URL)
-        
-        # Запускаємо бота
-        await application.start()
-        
+        # Запускаємо полінг
+        logger.info("✅ Бот запущено в режимі полінгу")
         bot_initialized = True
-        logger.info("✅ Бот успішно ініціалізовано!")
-        logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
-        return application
+        
+        await application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            timeout=30,
+            drop_pending_updates=True
+        )
         
     except Exception as e:
-        logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        logger.error(f"❌ Помилка полінгу бота: {e}")
         bot_initialized = False
-        return None
 
-def init_bot_sync():
-    """Синхронна обгортка для ініціалізації бота"""
-    global bot_initialized, bot_loop
-    
-    with init_lock:
-        if bot_initialized:
-            logger.info("✅ Бот вже ініціалізований")
-            return
-            
-        try:
-            # Створюємо новий event loop для цього потоку
-            bot_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(bot_loop)
-            
-            # Запускаємо асинхронну ініціалізацію
-            bot_loop.run_until_complete(init_bot_async())
-            
-            if bot_initialized:
-                logger.info("✅ Бот ініціалізовано в синхронному режимі")
-            else:
-                logger.error("❌ Не вдалося ініціалізувати бота")
-                
-        except Exception as e:
-            logger.error(f"❌ Помилка синхронної ініціалізації: {e}")
-            bot_initialized = False
+def start_polling():
+    """Запуск полінгу в окремому потоці"""
+    try:
+        # Створюємо новий event loop для цього потоку
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Запускаємо полінг
+        loop.run_until_complete(run_polling())
+        
+    except Exception as e:
+        logger.error(f"❌ Помилка в потоці полінгу: {e}")
+        bot_initialized = False
 
-async def shutdown_bot_async():
-    """Коректне завершення роботи бота"""
+def stop_bot():
+    """Зупинка бота"""
     global application, bot_initialized
     
     if application and bot_initialized:
         try:
-            logger.info("🔄 Завершення роботи бота...")
-            await application.stop()
-            await application.shutdown()
+            logger.info("🔄 Зупинка бота...")
+            # Application автоматично зупиняється при виході
             bot_initialized = False
-            logger.info("✅ Бот коректно завершив роботу")
+            logger.info("✅ Бот зупинено")
         except Exception as e:
-            logger.error(f"❌ Помилка завершення роботи бота: {e}")
-
-def shutdown_bot_sync():
-    """Синхронне завершення роботи бота"""
-    global bot_loop
-    
-    if bot_loop:
-        try:
-            bot_loop.run_until_complete(shutdown_bot_async())
-        except Exception as e:
-            logger.error(f"❌ Помилка синхронного завершення: {e}")
-
-def ensure_bot_initialized():
-    """Переконатися, що бот ініціалізований"""
-    global bot_initialized
-    
-    if not bot_initialized:
-        logger.info("🔄 Спроба ініціалізації бота...")
-        init_bot_sync()
-    
-    return bot_initialized
+            logger.error(f"❌ Помилка зупинки бота: {e}")
 
 # ==================== FLASK ROUTES ====================
 
 @app.route('/')
 def home():
-    return "🤖 Chatrix Bot is running!", 200
+    return "🤖 Chatrix Bot is running! (Polling mode)", 200
 
 @app.route('/health')
 def health():
@@ -538,55 +495,35 @@ def ping():
 @app.route('/status')
 def status():
     """Перевірка статусу"""
-    global application, bot_initialized
+    global bot_initialized
     return jsonify({
         'status': 'running',
         'bot_initialized': bot_initialized,
-        'port': PORT
+        'mode': 'polling'
     }), 200
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook для Telegram"""
-    global application, bot_initialized
-    
-    try:
-        # Переконуємося, що бот ініціалізований
-        if not ensure_bot_initialized():
-            logger.error("❌ Бот не ініціалізований")
-            return "Bot not initialized", 500
-            
-        update_data = request.get_json()
-        if update_data is None:
-            return "Empty update data", 400
-            
-        logger.info("📨 Отримано вебхук від Telegram")
-        
-        # Обробляємо оновлення через update_queue
-        update = Update.de_json(update_data, application.bot)
-        application.update_queue.put_nowait(update)
-        
-        return 'ok', 200
-        
-    except Exception as e:
-        logger.error(f"❌ Webhook помилка: {e}")
-        return "Error", 500
 
 # ==================== ЗАПУСК СЕРВЕРА ====================
 
 def main():
     """Запуск програми"""
+    global polling_thread
     
-    # Реєструємо функцію завершення
-    atexit.register(shutdown_bot_sync)
+    # Запускаємо бота в окремому потоці
+    polling_thread = threading.Thread(target=start_polling, daemon=True)
+    polling_thread.start()
     
-    # Запускаємо бота
-    init_bot_sync()
+    # Чекаємо на ініціалізацію бота
+    timeout = 10
+    start_time = time.time()
+    
+    while not bot_initialized and (time.time() - start_time) < timeout:
+        logger.info("⏳ Чекаємо на запуск бота...")
+        time.sleep(1)
     
     if bot_initialized:
-        logger.info("✅ Бот успішно ініціалізовано!")
+        logger.info("✅ Бот успішно запущено!")
     else:
-        logger.error("❌ Не вдалося ініціалізувати бота")
+        logger.error("❌ Таймаут запуску бота")
     
     # Запуск Flask сервера
     logger.info(f"🚀 Запуск сервера на порті {PORT}")

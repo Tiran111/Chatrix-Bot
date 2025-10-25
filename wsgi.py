@@ -1,11 +1,9 @@
-from main import app, init_bot_sync, shutdown_bot_sync
-import atexit
+from main import app, start_polling
+import threading
 
-# Ініціалізуємо бота при завантаженні модуля
-init_bot_sync()
-
-# Реєструємо завершення при виході
-atexit.register(shutdown_bot_sync)
+# Запускаємо полінг в окремому потоці
+polling_thread = threading.Thread(target=start_polling, daemon=True)
+polling_thread.start()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=False)
