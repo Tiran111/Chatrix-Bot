@@ -159,6 +159,11 @@ async def show_user_profile(update: Update, context: CallbackContext, user_data,
         
         context.user_data['current_profile_id'] = telegram_id
         
+        # ДОДАЄМО ПЕРЕГЛЯД ПРОФІЛЮ
+        if telegram_id and telegram_id != user.id:
+            db.add_profile_view(user.id, telegram_id)
+            logger.info(f"👀 Додано перегляд профілю: {user.id} -> {telegram_id}")
+        
         main_photo = db.get_main_photo(telegram_id)
         
         # Зберігаємо поточний профіль для лайку
@@ -798,64 +803,13 @@ async def show_profile_views(update: Update, context: CallbackContext):
             context.user_data['profile_viewers'] = viewers
             context.user_data['current_viewer_index'] = 0
             
-            await update.message.reply_text(f"👀 *Вас переглядали ({len(viewers)}):*", parse_mode='Markdown')
+            await update.message.reply_text(
+                f"👀 *Вас переглядали ({len(viewers)} користувачів):*", 
+                parse_mode='Markdown'
+            )
             
             # Показуємо першого переглядача
-            viewer = viewers[0]
-            
-            try:
-                # Визначаємо ID переглядача
-                if isinstance(viewer, dict):
-                    viewer_id = viewer.get('telegram_id')
-                else:
-                    viewer_id = viewer[1] if len(viewer) > 1 else None
-                
-                if not viewer_id:
-                    await show_next_profile_view(update, context)  # Пропускаємо пустий
-                    return
-                
-                # Форматуємо профіль
-                profile_text = format_profile_text(viewer, "👀 Переглядав(ла) ваш профіль")
-                main_photo = db.get_main_photo(viewer_id)
-                
-                # Отримуємо username
-                viewed_user = db.get_user(viewer_id)
-                username = viewed_user.get('username') if viewed_user else None
-                
-                if main_photo:
-                    caption = profile_text
-                    if username:
-                        caption += f"\n\n💬 Username: @{username}"
-                    
-                    await update.message.reply_photo(
-                        photo=main_photo,
-                        caption=caption,
-                        parse_mode='Markdown'
-                    )
-                else:
-                    text = profile_text
-                    if username:
-                        text += f"\n\n💬 Username: @{username}"
-                    
-                    await update.message.reply_text(
-                        text,
-                        parse_mode='Markdown'
-                    )
-                
-                # Додаємо кнопку для лайку ТА повернення в меню
-                context.user_data['current_profile_for_like'] = viewer_id
-                keyboard = [
-                    ['❤️ Лайкнути'],
-                    ['➡️ Наступний перегляд', '🔙 Меню']  # ← ДОДАЄМО КНОПКУ МЕНЮ
-                ]
-                await update.message.reply_text(
-                    "Бажаєте поставити лайк?",
-                    reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-                )
-                        
-            except Exception as e:
-                logger.error(f"❌ Помилка обробки першого переглядача: {e}")
-                await show_next_profile_view(update, context)  # Пробуємо наступного
+            await show_next_profile_view(update, context)
                     
         else:
             await update.message.reply_text(
@@ -870,8 +824,8 @@ async def show_profile_views(update: Update, context: CallbackContext):
         await update.message.reply_text(
             "❌ Помилка завантаження переглядів. Спробуйте ще раз.",
             reply_markup=get_main_menu(user.id)
-        )                      
-
+        )                     
+        
 async def show_next_profile_view(update: Update, context: CallbackContext):
     """Показати наступного переглядача"""
     user = update.effective_user
