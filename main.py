@@ -6,9 +6,8 @@ from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, 
-    filters, ConversationHandler, CallbackQueryHandler
+    filters, ConversationHandler
 )
-from telegram.error import TelegramError
 
 # Налаштування логування
 logging.basicConfig(
@@ -39,6 +38,7 @@ PORT = int(os.environ.get('PORT', 10000))
 
 # Глобальний об'єкт бота
 application = None
+bot_initialized = False
 
 # Стани для ConversationHandler
 PROFILE_AGE, PROFILE_GENDER, PROFILE_CITY, PROFILE_SEEKING_GENDER, PROFILE_GOAL, PROFILE_BIO = range(6)
@@ -425,7 +425,7 @@ def setup_handlers(app):
 
 async def init_bot():
     """Ініціалізація бота"""
-    global application
+    global application, bot_initialized
     
     try:
         logger.info("🔄 Ініціалізація бота...")
@@ -442,12 +442,17 @@ async def init_bot():
         # Встановлюємо вебхук
         await application.bot.set_webhook(WEBHOOK_URL)
         
+        # Запускаємо полінг в фоновому режимі
+        await application.start()
+        
+        bot_initialized = True
         logger.info("✅ Бот успішно ініціалізовано!")
         logger.info(f"🌐 Вебхук встановлено: {WEBHOOK_URL}")
         return application
         
     except Exception as e:
         logger.error(f"❌ Помилка ініціалізації бота: {e}")
+        bot_initialized = False
         return None
 
 # ==================== FLASK ROUTES ====================
@@ -467,18 +472,20 @@ def ping():
 @app.route('/status')
 def status():
     """Перевірка статусу"""
-    global application
+    global application, bot_initialized
     return jsonify({
         'status': 'running',
-        'bot_initialized': application is not None,
+        'bot_initialized': bot_initialized,
         'port': PORT
     }), 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook для Telegram"""
+    global application, bot_initialized
+    
     try:
-        if not application:
+        if not bot_initialized or not application:
             logger.error("❌ Бот не ініціалізований")
             return "Bot not initialized", 500
             
@@ -488,9 +495,9 @@ def webhook():
             
         logger.info("📨 Отримано вебхук від Telegram")
         
-        # Обробляємо оновлення
+        # Обробляємо оновлення через update_queue
         update = Update.de_json(update_data, application.bot)
-        application.update_queue.put(update)
+        application.update_queue.put_nowait(update)
         
         return 'ok', 200
         
@@ -502,6 +509,8 @@ def webhook():
 
 def run_bot():
     """Запуск бота в окремому потоці"""
+    global bot_initialized
+    
     try:
         # Створюємо новий event loop для цього потоку
         loop = asyncio.new_event_loop()
@@ -521,6 +530,7 @@ def run_bot():
         
     except Exception as e:
         logger.error(f"❌ Помилка в потоці бота: {e}")
+        bot_initialized = False
 
 def main():
     """Запуск програми"""
@@ -529,9 +539,19 @@ def main():
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # Чекаємо трохи на ініціалізацію бота
+    # Чекаємо на ініціалізацію бота
     import time
-    time.sleep(3)
+    timeout = 10  # секунд
+    start_time = time.time()
+    
+    while not bot_initialized and (time.time() - start_time) < timeout:
+        logger.info("⏳ Чекаємо на ініціалізацію бота...")
+        time.sleep(1)
+    
+    if bot_initialized:
+        logger.info("✅ Бот успішно ініціалізовано!")
+    else:
+        logger.error("❌ Таймаут ініціалізації бота")
     
     # Запуск Flask сервера
     logger.info(f"🚀 Запуск сервера на порті {PORT}")
