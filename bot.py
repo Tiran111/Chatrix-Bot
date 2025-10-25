@@ -1,9 +1,6 @@
+# bot.py - Простий бот тільки з полінгом
 import logging
-import os
 import asyncio
-import threading
-import time
-from flask import Flask, request, jsonify
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, 
@@ -16,8 +13,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
 
 # Імпорт модулів
 try:
@@ -32,14 +27,6 @@ try:
 except ImportError as e:
     logger.error(f"❌ Помилка імпорту конфігурації: {e}")
     raise
-
-# Глобальні змінні
-PORT = int(os.environ.get('PORT', 10000))
-
-# Глобальний об'єкт бота
-application = None
-bot_initialized = False
-polling_thread = None
 
 # Стани для ConversationHandler
 PROFILE_AGE, PROFILE_GENDER, PROFILE_CITY, PROFILE_SEEKING_GENDER, PROFILE_GOAL, PROFILE_BIO = range(6)
@@ -334,64 +321,11 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /profile"""
     await show_profile(update, context)
 
-# ==================== АДМІН КОМАНДИ ====================
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /admin"""
-    user = update.effective_user
-    
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
-        return
-    
-    admin_text = (
-        "👑 <b>Адмін панель</b>\n\n"
-        "📊 Статистика:\n"
-        f"• Користувачів: {db.get_users_count()}\n\n"
-        "🛠️ Команди:\n"
-        "/stats - Детальна статистика\n"
-        "/users - Список користувачів\n"
-        "/broadcast - Розсилка повідомлень\n"
-    )
-    await update.message.reply_text(admin_text, parse_mode='HTML')
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /stats"""
-    user = update.effective_user
-    
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("❌ У вас немає доступу до цієї команди.")
-        return
-    
-    male_count, female_count, total_active, goals_stats = db.get_statistics()
-    
-    stats_text = (
-        "📊 <b>Статистика бота</b>\n\n"
-        f"👥 Загалом користувачів: {db.get_users_count()}\n"
-        f"🟢 Активних: {total_active}\n\n"
-        f"👨 Чоловіків: {male_count}\n"
-        f"👩 Жінок: {female_count}\n\n"
-        "🎯 <b>Цілі користувачів:</b>\n"
-    )
-    
-    for goal_stat in goals_stats:
-        stats_text += f"• {goal_stat['goal']}: {goal_stat['count']}\n"
-    
-    await update.message.reply_text(stats_text, parse_mode='HTML')
-
 # ==================== ОБРОБНИКИ ПОМИЛОК ====================
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник помилок"""
     logger.error(f"❌ Помилка в боті: {context.error}", exc_info=True)
-    
-    try:
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ Сталася несподівана помилка. Спробуйте пізніше або зверніться до адміністратора."
-            )
-    except Exception as e:
-        logger.error(f"❌ Помилка відправки повідомлення про помилку: {e}")
 
 # ==================== НАЛАШТУВАННЯ ОБРОБНИКІВ ====================
 
@@ -416,120 +350,42 @@ def setup_handlers(app):
     app.add_handler(profile_conv_handler)
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("profile", profile_command))
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("stats", stats_command))
     
     # Обробник помилок
     app.add_error_handler(error_handler)
 
-# ==================== ІНІЦІАЛІЗАЦІЯ БОТА ====================
+# ==================== ЗАПУСК БОТА ====================
 
-async def run_polling():
-    """Запуск полінгу бота"""
-    global application, bot_initialized
+async def main():
+    """Запуск бота"""
+    logger.info("🚀 Запуск Chatrix Bot...")
     
+    # Перевірка токена
+    import requests
     try:
-        logger.info("🔄 Запуск бота в режимі полінгу...")
-        
-        # Створюємо додаток
-        application = Application.builder().token(TOKEN).build()
-        
-        # Додаємо обробники
-        setup_handlers(application)
-        
-        # Запускаємо полінг
-        logger.info("✅ Бот запущено в режимі полінгу")
-        bot_initialized = True
-        
-        await application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            timeout=30,
-            drop_pending_updates=True
-        )
-        
+        response = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe", timeout=10)
+        if response.json().get('ok'):
+            bot_info = response.json()['result']
+            logger.info(f"✅ Бот знайдений: {bot_info['first_name']}")
+        else:
+            logger.error("❌ Бот не знайдений. Перевірте токен.")
+            return
     except Exception as e:
-        logger.error(f"❌ Помилка полінгу бота: {e}")
-        bot_initialized = False
-
-def start_polling():
-    """Запуск полінгу в окремому потоці"""
-    try:
-        # Створюємо новий event loop для цього потоку
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Запускаємо полінг
-        loop.run_until_complete(run_polling())
-        
-    except Exception as e:
-        logger.error(f"❌ Помилка в потоці полінгу: {e}")
-        bot_initialized = False
-
-def stop_bot():
-    """Зупинка бота"""
-    global application, bot_initialized
+        logger.error(f"❌ Помилка перевірки бота: {e}")
+        return
     
-    if application and bot_initialized:
-        try:
-            logger.info("🔄 Зупинка бота...")
-            # Application автоматично зупиняється при виході
-            bot_initialized = False
-            logger.info("✅ Бот зупинено")
-        except Exception as e:
-            logger.error(f"❌ Помилка зупинки бота: {e}")
-
-# ==================== FLASK ROUTES ====================
-
-@app.route('/')
-def home():
-    return "🤖 Chatrix Bot is running! (Polling mode)", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-@app.route('/ping')
-def ping():
-    return "pong", 200
-
-@app.route('/status')
-def status():
-    """Перевірка статусу"""
-    global bot_initialized
-    return jsonify({
-        'status': 'running',
-        'bot_initialized': bot_initialized,
-        'mode': 'polling'
-    }), 200
-
-# ==================== ЗАПУСК СЕРВЕРА ====================
-
-def main():
-    """Запуск програми"""
-    global polling_thread
+    # Створюємо додаток
+    application = Application.builder().token(TOKEN).build()
     
-    # Запускаємо бота в окремому потоці
-    polling_thread = threading.Thread(target=start_polling, daemon=True)
-    polling_thread.start()
+    # Додаємо обробники
+    setup_handlers(application)
     
-    # Чекаємо на ініціалізацію бота
-    timeout = 10
-    start_time = time.time()
-    
-    while not bot_initialized and (time.time() - start_time) < timeout:
-        logger.info("⏳ Чекаємо на запуск бота...")
-        time.sleep(1)
-    
-    if bot_initialized:
-        logger.info("✅ Бот успішно запущено!")
-    else:
-        logger.error("❌ Таймаут запуску бота")
-    
-    # Запуск Flask сервера
-    logger.info(f"🚀 Запуск сервера на порті {PORT}")
-    logger.info(f"🌐 URL: https://chatrix-bot-4m1p.onrender.com")
-    
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+    # Запускаємо полінг
+    logger.info("✅ Бот запущено в режимі полінгу")
+    await application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
